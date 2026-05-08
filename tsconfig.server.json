@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "jsx": "react",
+    "jsxFactory": "Devvit.createElement",
+    "jsxFragmentFactory": "Devvit.Fragment",
+    "lib": ["ES2020", "DOM"],
+    "types": [],
+    "outDir": "./dist/server",
+    "rootDir": "./src"
+  },
+  "include": [
+    "src/main.tsx",
+    "src/triggers/**/*",
+    "src/modules/**/*",
+    "src/ai/**/*",
+    "src/redis/**/*",
+    "src/shared/**/*"
+  ],
+  "exclude": ["src/webview/**/*", "node_modules"]
+}

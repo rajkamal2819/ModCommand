@@ -1,0 +1,33 @@
+{
+  "name": "modcommand",
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "build:webview": "vite build --config vite.config.ts",
+    "build": "npm run build:webview && tsc --project tsconfig.server.json",
+    "dev:webview": "vite --config vite.config.ts",
+    "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.webview.json --noEmit",
+    "upload": "devvit upload",
+    "playtest": "devvit playtest"
+  },
+  "dependencies": {
+    "@devvit/public-api": "0.12.22",
+    "diff": "^7.0.0",
+    "recharts": "^2.15.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/diff": "^7.0.0",
+    "@types/react": "^18.3.20",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.5.0",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5",
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.3",
+    "tailwindcss": "^3.4.17"
+  },
+  "private": true,
+  "license": "BSD-3-Clause"
+}
