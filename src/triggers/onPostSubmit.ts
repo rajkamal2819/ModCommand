@@ -21,12 +21,19 @@ export const onPostSubmit: PostSubmitDefinition = {
       createdAt: Date.now().toString(),
     })
 
+    console.log(`[Sentinel] PostSubmit fired: ${post.id} by ${authorName}`)
     try {
       const apiKey = (await context.settings.get('geminiApiKey')) as string | undefined
       const threshold = ((await context.settings.get('aigcThreshold')) as number | undefined) ?? 70
-      if (!apiKey) return
+      console.log(`[Sentinel] apiKey present: ${!!apiKey}, threshold: ${threshold}`)
+      if (!apiKey) {
+        console.log('[Sentinel] No API key set; skipping')
+        return
+      }
 
+      console.log(`[Sentinel] Calling Gemini for ${post.id}, content length: ${content.length}`)
       const result = await scoreContent(content, redis, apiKey)
+      console.log(`[Sentinel] Score: ${result.score}, heuristics:`, result.heuristics)
 
       await redis.hSet(Keys.editRecord(post.id), {
         aigcScore: result.score.toString(),
@@ -35,6 +42,7 @@ export const onPostSubmit: PostSubmitDefinition = {
 
       if (result.score >= threshold) {
         const subredditName = event.subreddit?.name ?? ''
+        console.log(`[Sentinel] Score ${result.score} >= threshold ${threshold}; writing to feed for r/${subredditName}`)
         const entry = JSON.stringify({
           id: post.id,
           title: post.title,
@@ -48,13 +56,21 @@ export const onPostSubmit: PostSubmitDefinition = {
         await redis.zAdd(Keys.sentinelFeed(subredditName), { score: Date.now(), member: entry })
         await redis.zRemRangeByRank(Keys.sentinelFeed(subredditName), 0, -101)
 
-        const fullPost = await context.reddit.getPostById(`t3_${post.id}`)
-        await context.reddit.report(fullPost, {
-          reason: `AI Sentinel: ${result.score}% likelihood — ${result.heuristics[0]}`,
-        })
+        try {
+          const fullPost = await context.reddit.getPostById(`t3_${post.id}`)
+          await context.reddit.report(fullPost, {
+            reason: `AI Sentinel: ${result.score}% likelihood — ${result.heuristics[0]}`,
+          })
+          console.log('[Sentinel] Auto-reported post to mod queue')
+        } catch (reportErr) {
+          console.error('[Sentinel] Failed to auto-report:', reportErr)
+        }
+      } else {
+        console.log(`[Sentinel] Score ${result.score} below threshold ${threshold}; not flagging`)
       }
-    } catch {
-      // AI scoring is non-critical
+    } catch (err) {
+      console.error('[Sentinel] Error in onPostSubmit:', err instanceof Error ? err.message : err)
+      console.error('[Sentinel] Stack:', err instanceof Error ? err.stack : 'no stack')
     }
   },
 }

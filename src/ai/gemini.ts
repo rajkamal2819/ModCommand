@@ -26,6 +26,7 @@ async function callGemini<T>(prompt: string, apiKey: string, retries = 2): Promi
   let lastError: Error | undefined
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
+      console.log(`[Gemini] Attempt ${attempt + 1}/${retries + 1}`)
       const res = await fetch(
         'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
         {
@@ -41,12 +42,21 @@ async function callGemini<T>(prompt: string, apiKey: string, retries = 2): Promi
           }),
         }
       )
-      if (!res.ok) throw new Error(`Gemini HTTP ${res.status}`)
+      if (!res.ok) {
+        const errBody = await res.text()
+        console.error(`[Gemini] HTTP ${res.status}: ${errBody.slice(0, 500)}`)
+        throw new Error(`Gemini HTTP ${res.status}: ${errBody.slice(0, 200)}`)
+      }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const data = (await res.json()) as any
-      return JSON.parse(data.choices[0].message.content) as T
+      const rawContent = data?.choices?.[0]?.message?.content ?? ''
+      console.log(`[Gemini] Raw response (first 300 chars): ${rawContent.slice(0, 300)}`)
+      // Strip markdown fences if present (some models wrap JSON in ```json ... ```)
+      const cleaned = rawContent.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim()
+      return JSON.parse(cleaned) as T
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err))
+      console.error(`[Gemini] Attempt ${attempt + 1} failed: ${lastError.message}`)
       if (attempt < retries) await sleep(500 * 2 ** attempt)
     }
   }
