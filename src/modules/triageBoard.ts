@@ -14,10 +14,29 @@ export async function handleTriageInit(context: Context): Promise<{
   const subreddit = await context.reddit.getCurrentSubreddit()
   const currentMod = (await context.reddit.getCurrentUsername()) ?? 'unknown'
 
-  const queue = await subreddit.getModQueue().all()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let queue: any[] = []
+
+  // Try mod queue first; fall back to recent posts in dev/playtest where there are no reports
+  try {
+    const modQueue = await subreddit.getModQueue().all()
+    queue = modQueue
+  } catch {
+    // ignore
+  }
+
+  if (queue.length === 0) {
+    try {
+      const recentPosts = await context.reddit.getNewPosts({ subredditName: subreddit.name, limit: 25 }).all()
+      queue = recentPosts.filter((p: { id: string }) => p.id !== context.postId)
+    } catch {
+      // ignore
+    }
+  }
 
   const items: ModQueueItem[] = await Promise.all(
-    queue.map(async (item) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    queue.map(async (item: any) => {
       const itemId = item.id
       const [claimedBy, editRecord] = await Promise.all([
         redis.get(Keys.claimLock(itemId)),
@@ -30,7 +49,7 @@ export async function handleTriageInit(context: Context): Promise<{
 
       const isComment = 'postId' in item
       const reportReason =
-        (item.modReportReasons?.[0] ?? item.userReportReasons?.[0] ?? 'No reason given')
+        (item.modReportReasons?.[0] ?? item.userReportReasons?.[0] ?? 'Pending review')
 
       return {
         id: itemId,

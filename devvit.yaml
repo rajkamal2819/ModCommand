@@ -1,13 +1,6 @@
 name: modcommand
-version: 0.1.0
-permissions:
-  - reddit.modQueue
-  - reddit.modActions
-  - reddit.modNotes
-  - reddit.bans
-  - reddit.modmail
-  - http
-  - storage.redis
+version: 0.0.1
+
 settings:
   - name: geminiApiKey
     label: Gemini API Key
@@ -16,7 +9,6 @@ settings:
     isSecret: true
   - name: aigcThreshold
     label: AI Detection Threshold (0-100)
-    description: Posts scoring above this threshold will be flagged
     type: number
     defaultValue: 70
   - name: appealFormEnabled
@@ -24,6 +16,6 @@ settings:
     type: boolean
     defaultValue: true
   - name: digestDay
-    label: Weekly digest day (0=Sunday, 1=Monday, ... 6=Saturday)
+    label: Weekly digest day (0=Sunday, 1=Monday, 6=Saturday)
     type: number
     defaultValue: 1

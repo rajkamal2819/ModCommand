@@ -12,10 +12,11 @@ export function useDevvitBridge(): Bridge {
 
   useEffect(() => {
     function onMessage(event: MessageEvent) {
-      // Devvit wraps postMessage in a data envelope
-      const raw = event.data?.data ?? event.data
-      if (raw && typeof raw === 'object' && 'type' in raw) {
-        setLastMessage(raw as ServerMessage)
+      // Devvit shell wraps server-sent messages as { type: 'devvit-message', data: { message: <payload> } }
+      if (event.data?.type !== 'devvit-message') return
+      const msg = event.data?.data?.message
+      if (msg && typeof msg === 'object' && 'type' in msg) {
+        setLastMessage(msg as ServerMessage)
       }
     }
 
@@ -24,11 +25,8 @@ export function useDevvitBridge(): Bridge {
   }, [])
 
   const send = useCallback((msg: ClientMessage) => {
-    // Devvit expects messages wrapped in { type: 'devvit-message', data: { message: ... } }
-    window.parent.postMessage(
-      { type: 'devvit-message', data: { message: msg } },
-      '*'
-    )
+    // Webview -> server: send the raw message; the Reddit shell adds the proto envelope.
+    window.parent.postMessage(msg, '*')
   }, [])
 
   // Signal ready to parent on mount

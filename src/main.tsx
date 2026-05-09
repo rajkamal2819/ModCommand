@@ -62,11 +62,21 @@ Devvit.addSchedulerJob({
 // ─── Subreddit menu item ───────────────────────────────────────────────────────
 
 Devvit.addMenuItem({
-  label: 'Open ModCommand',
+  label: 'Create ModCommand Dashboard',
   location: 'subreddit',
   forUserType: 'moderator',
   onPress: async (_event, context) => {
-    context.ui.showToast('Opening ModCommand dashboard...')
+    const subreddit = await context.reddit.getCurrentSubreddit()
+    const post = await context.reddit.submitPost({
+      title: 'ModCommand Dashboard',
+      subredditName: subreddit.name,
+      preview: (
+        <vstack height="100%" width="100%" alignment="center middle" backgroundColor="#030712">
+          <text color="#f97316">Loading ModCommand...</text>
+        </vstack>
+      ),
+    })
+    context.ui.navigateTo(post)
   },
 })
 

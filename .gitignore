@@ -4,5 +4,6 @@ webroot/
 .env
 context.md
 prd.md
+GUIDE.md
 *.tsbuildinfo
 .devvit/
