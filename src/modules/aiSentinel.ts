@@ -8,7 +8,17 @@ export async function handleSentinelLoad(context: Context): Promise<{
 }> {
   const redis = context.redis
   const subreddit = await context.reddit.getCurrentSubreddit()
-  const threshold = ((await context.settings.get('aigcThreshold')) as number | undefined) ?? 70
+  // Check Redis override first (set by SENTINEL_THRESHOLD_UPDATE), fall back to app settings
+  const savedSettings = await redis.get(Keys.settings(subreddit.id))
+  let threshold = 70
+  if (savedSettings) {
+    try {
+      const parsed = JSON.parse(savedSettings) as { aigcThreshold?: number }
+      threshold = parsed.aigcThreshold ?? threshold
+    } catch {}
+  } else {
+    threshold = ((await context.settings.get('aigcThreshold')) as number | undefined) ?? 70
+  }
 
   // zRange returns entries ordered by score (timestamp); reverse to show newest first
   const rawEntries = await redis.zRange(Keys.sentinelFeed(subreddit.name), '+inf', '-inf', { by: 'score', reverse: true })
