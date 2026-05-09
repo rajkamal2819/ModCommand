@@ -35,7 +35,7 @@ async function callGemini<T>(prompt: string, apiKey: string, retries = 2): Promi
             Authorization: `Bearer ${apiKey}`,
           },
           body: JSON.stringify({
-            model: 'gemini-2.5-flash',
+            model: 'gemini-1.5-flash',
             messages: [{ role: 'user', content: prompt }],
             response_format: { type: 'json_object' },
           }),
