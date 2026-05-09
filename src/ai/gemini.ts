@@ -96,7 +96,7 @@ export async function scoreContent(
   apiKey: string
 ): Promise<AIGCResult> {
   const hash = hashContent(content)
-  const cacheKey = Keys.aiScore(hash)
+  const cacheKey = Keys.aiScore('aigc:' + hash)
 
   const cached = await redis.get(cacheKey)
   if (cached) return JSON.parse(cached) as AIGCResult
@@ -139,7 +139,7 @@ export async function summarizeAppeal(
   apiKey: string
 ): Promise<AppealResult> {
   const hash = hashContent(`${banReason}|${formAnswers}`)
-  const cacheKey = Keys.aiScore(hash)
+  const cacheKey = Keys.aiScore('appeal:' + hash)
 
   const cached = await redis.get(cacheKey)
   if (cached) return JSON.parse(cached) as AppealResult
@@ -177,7 +177,7 @@ export async function classifyEdit(
   apiKey: string
 ): Promise<EditResult> {
   const hash = hashContent(`${original}|${edited}`)
-  const cacheKey = Keys.aiScore(hash)
+  const cacheKey = Keys.aiScore('edit:' + hash)
 
   const cached = await redis.get(cacheKey)
   if (cached) return JSON.parse(cached) as EditResult

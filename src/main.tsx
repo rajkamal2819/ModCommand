@@ -8,6 +8,7 @@ import { onCommentSubmit } from './triggers/onCommentSubmit.js'
 import { onPostUpdate } from './triggers/onPostUpdate.js'
 import { onCommentUpdate } from './triggers/onCommentUpdate.js'
 import { onPostReport } from './triggers/onPostReport.js'
+import { onCommentReport } from './triggers/onCommentReport.js'
 import { onModAction } from './triggers/onModAction.js'
 import { onModmail } from './triggers/onModmail.js'
 
@@ -34,6 +35,7 @@ Devvit.addTrigger(onCommentSubmit)
 Devvit.addTrigger(onPostUpdate)
 Devvit.addTrigger(onCommentUpdate)
 Devvit.addTrigger(onPostReport)
+Devvit.addTrigger(onCommentReport)
 Devvit.addTrigger(onModAction)
 Devvit.addTrigger(onModmail)
 
