@@ -1,4 +1,4 @@
-import { Devvit, useWebView } from '@devvit/public-api'
+import { Devvit, useWebView, useState } from '@devvit/public-api'
 import type { JSONValue } from '@devvit/public-api'
 import type { ClientMessage, ServerMessage } from './shared/messages.js'
 
@@ -9,6 +9,8 @@ import { onPostUpdate } from './triggers/onPostUpdate.js'
 import { onCommentUpdate } from './triggers/onCommentUpdate.js'
 import { onPostReport } from './triggers/onPostReport.js'
 import { onCommentReport } from './triggers/onCommentReport.js'
+import { onPostDelete } from './triggers/onPostDelete.js'
+import { onCommentDelete } from './triggers/onCommentDelete.js'
 import { onModAction } from './triggers/onModAction.js'
 import { onModmail } from './triggers/onModmail.js'
 
@@ -19,6 +21,7 @@ import { handleSentinelLoad, handleSentinelThresholdUpdate } from './modules/aiS
 import { handleAppealLoad, handleAppealResolve } from './modules/appealDesk.js'
 import { handleWorkloadLoad, runWeeklyDigest } from './modules/workloadWall.js'
 import { Keys } from './redis/keys.js'
+import { isCurrentUserModerator } from './auth/isModerator.js'
 
 // ─── App config ────────────────────────────────────────────────────────────────
 
@@ -28,6 +31,39 @@ Devvit.configure({
   http: true,
 })
 
+// ─── Settings ──────────────────────────────────────────────────────────────────
+
+Devvit.addSettings([
+  {
+    type: 'string',
+    name: 'geminiApiKey',
+    label: 'Gemini API Key',
+    isSecret: true,
+    scope: 'app',
+  },
+  {
+    type: 'number',
+    name: 'aigcThreshold',
+    label: 'AI Detection Threshold (0-100)',
+    defaultValue: 70,
+    scope: 'installation',
+  },
+  {
+    type: 'boolean',
+    name: 'appealFormEnabled',
+    label: 'Enable Appeal Desk intake form',
+    defaultValue: true,
+    scope: 'installation',
+  },
+  {
+    type: 'number',
+    name: 'digestDay',
+    label: 'Weekly digest day (0=Sunday, 1=Monday, 6=Saturday)',
+    defaultValue: 1,
+    scope: 'installation',
+  },
+])
+
 // ─── Triggers ──────────────────────────────────────────────────────────────────
 
 Devvit.addTrigger(onPostSubmit)
@@ -36,6 +72,8 @@ Devvit.addTrigger(onPostUpdate)
 Devvit.addTrigger(onCommentUpdate)
 Devvit.addTrigger(onPostReport)
 Devvit.addTrigger(onCommentReport)
+Devvit.addTrigger(onPostDelete)
+Devvit.addTrigger(onCommentDelete)
 Devvit.addTrigger(onModAction)
 Devvit.addTrigger(onModmail)
 
@@ -78,6 +116,8 @@ Devvit.addMenuItem({
         </vstack>
       ),
     })
+    // Pin to slot 1 so it stays visible regardless of post volume
+    try { await post.sticky(1) } catch {}
     context.ui.navigateTo(post)
   },
 })
@@ -88,6 +128,8 @@ Devvit.addCustomPostType({
   name: 'ModCommand Dashboard',
   height: 'tall',
   render: (context) => {
+    const [isMod] = useState(async () => isCurrentUserModerator(context))
+
     const webView = useWebView({
       url: 'index.html',
 
@@ -95,6 +137,12 @@ Devvit.addCustomPostType({
         const message = rawMessage as unknown as ClientMessage
         const send = (msg: ServerMessage) =>
           hook.postMessage(msg as unknown as JSONValue)
+
+        // Gate all requests to moderators only (cached 60s)
+        if (!(await isCurrentUserModerator(context))) {
+          send({ type: 'ACCESS_DENIED' })
+          return
+        }
 
         try {
           switch (message.type) {
@@ -169,6 +217,16 @@ Devvit.addCustomPostType({
         }
       },
     })
+
+    if (!isMod) {
+      return (
+        <vstack height="100%" width="100%" alignment="center middle" backgroundColor="#030712" gap="small">
+          <text size="xxlarge">🔒</text>
+          <text style="heading" size="large" color="#f3f4f6">Moderators Only</text>
+          <text color="secondary" size="medium">This dashboard is restricted to subreddit moderators.</text>
+        </vstack>
+      )
+    }
 
     return (
       <vstack height="100%" width="100%" alignment="center middle" backgroundColor="#030712">

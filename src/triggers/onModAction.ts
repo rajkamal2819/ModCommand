@@ -30,5 +30,15 @@ export const onModAction: ModActionDefinition = {
     // Prune entries older than 90 days
     const cutoff = now - 90 * 24 * 60 * 60 * 1000
     await redis.zRemRangeByScore(Keys.modActions(modName), 0, cutoff)
+
+    // If this was a removal, mark the target in sentinelRemoved so the dashboard shows it
+    const action = event.action ?? ''
+    if (action === 'removelink' || action === 'removecomment' || action === 'spamlink' || action === 'spamcomment') {
+      const targetId = event.targetPost?.id ?? event.targetComment?.id
+      const subName = event.subreddit?.name
+      if (targetId && subName) {
+        await redis.hSet(Keys.sentinelRemoved(subName), { [targetId]: 'mod' })
+      }
+    }
   },
 }

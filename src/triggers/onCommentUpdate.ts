@@ -17,6 +17,7 @@ export const onCommentUpdate: CommentUpdateDefinition = {
     const edited = comment.body ?? ''
 
     if (original === edited) return
+    if (record['edited'] === edited) return  // dedupe Devvit replays
 
     const now = Date.now()
     const reportedAtStr = await redis.get(Keys.reportedAt(comment.id))

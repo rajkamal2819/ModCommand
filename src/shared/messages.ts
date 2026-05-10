@@ -55,6 +55,8 @@ export interface SentinelEntry {
   score: number
   heuristics: string[]
   scoredAt: number
+  removed?: boolean
+  removedBy?: 'mod' | 'user'
 }
 
 export interface EditWatchEntry {
@@ -72,6 +74,8 @@ export interface EditWatchEntry {
   deltaMinutes: number
   score: 'HIGH' | 'MEDIUM' | 'LOW'
   status: 'flagged' | 'innocent' | 'ignored'
+  removed?: boolean
+  removedBy?: 'mod' | 'user'
 }
 
 export interface DiffChunk {
@@ -121,3 +125,4 @@ export type ServerMessage =
   | { type: 'WORKLOAD_STATE'; mods: ModStats[]; period: '7d' | '30d' }
   | { type: 'ACTION_SUCCESS'; message: string }
   | { type: 'ERROR'; message: string }
+  | { type: 'ACCESS_DENIED' }

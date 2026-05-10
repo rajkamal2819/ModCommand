@@ -34,7 +34,14 @@ export const onCommentSubmit: CommentSubmitDefinition = {
       })
 
       if (result.score >= threshold) {
-        const subredditName = event.subreddit?.name ?? ''
+        let subredditName = event.subreddit?.name
+        if (!subredditName) {
+          try {
+            const sub = await context.reddit.getCurrentSubreddit()
+            subredditName = sub.name
+          } catch {}
+        }
+        if (!subredditName) return
         const entry = JSON.stringify({
           id: comment.id,
           title: `Comment by u/${comment.author ?? 'unknown'}`,
@@ -45,13 +52,21 @@ export const onCommentSubmit: CommentSubmitDefinition = {
           heuristics: result.heuristics,
           scoredAt: Date.now(),
         })
-        await redis.zAdd(Keys.sentinelFeed(subredditName), { score: Date.now(), member: entry })
-        await redis.zRemRangeByRank(Keys.sentinelFeed(subredditName), 0, -101)
+        const feedKey = Keys.sentinelFeed(subredditName)
+        await redis.zAdd(feedKey, { score: Date.now(), member: entry })
+        const count = await redis.zCard(feedKey)
+        if (count > 100) {
+          await redis.zRemRangeByRank(feedKey, 0, count - 101)
+        }
 
-        const fullComment = await context.reddit.getCommentById(`t1_${comment.id}`)
-        await context.reddit.report(fullComment, {
-          reason: `AI Sentinel: ${result.score}% likelihood — ${result.heuristics[0]}`,
-        })
+        try {
+          const fullId = comment.id.startsWith('t1_') ? comment.id : `t1_${comment.id}`
+          const fullComment = await context.reddit.getCommentById(fullId)
+          const fullReason = `AI Sentinel: ${result.score}% — ${result.heuristics[0]}`
+          await context.reddit.report(fullComment, {
+            reason: fullReason.slice(0, 99),
+          })
+        } catch {}
       }
     } catch {
       // AI scoring is non-critical

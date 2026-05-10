@@ -30,6 +30,9 @@ export default function AISentinel({ entries, threshold, send }: Props) {
     send({ type: 'SENTINEL_THRESHOLD_UPDATE', threshold: val })
   }
 
+  // Filter visible entries by current threshold (live, no server roundtrip needed)
+  const visibleEntries = entries.filter((e) => e.score >= localThreshold)
+
   return (
     <div className="flex flex-col h-full">
       {/* Threshold control */}
@@ -49,13 +52,13 @@ export default function AISentinel({ entries, threshold, send }: Props) {
           {localThreshold}
         </span>
         <span className="text-xs text-gray-500 shrink-0">
-          {entries.length} flagged
+          {visibleEntries.length} of {entries.length} flagged
         </span>
       </div>
 
       {/* Feed */}
       <div className="flex-1 overflow-y-auto">
-        {entries.length === 0 ? (
+        {visibleEntries.length === 0 ? (
           <div className="flex items-center justify-center h-full text-gray-600">
             <div className="text-center">
               <div className="text-3xl mb-2">🤖</div>
@@ -67,8 +70,8 @@ export default function AISentinel({ entries, threshold, send }: Props) {
           </div>
         ) : (
           <div className="divide-y divide-gray-800">
-            {entries.map((entry) => (
-              <div key={entry.id} className="px-4 py-3">
+            {visibleEntries.map((entry) => (
+              <div key={entry.id} className={`px-4 py-3 ${entry.removed ? 'opacity-60' : ''}`}>
                 <div className="flex items-start gap-3">
                   <ScoreBadge score={entry.score} />
                   <div className="flex-1 min-w-0">
@@ -76,11 +79,28 @@ export default function AISentinel({ entries, threshold, send }: Props) {
                       href={entry.url}
                       target="_blank"
                       rel="noreferrer"
-                      className="text-sm text-gray-200 hover:text-orange-400 line-clamp-2 font-medium"
+                      className={`text-sm hover:text-orange-400 line-clamp-2 font-medium ${
+                        entry.removed ? 'text-gray-500 line-through' : 'text-gray-200'
+                      }`}
                     >
                       {entry.title}
                     </a>
                     <div className="flex items-center gap-2 mt-1">
+                      {entry.removed && entry.removedBy === 'mod' && (
+                        <span className="text-xs bg-red-900/60 text-red-300 px-1.5 py-0.5 rounded font-medium uppercase tracking-wide">
+                          Removed by mod
+                        </span>
+                      )}
+                      {entry.removed && entry.removedBy === 'user' && (
+                        <span className="text-xs bg-gray-700 text-gray-400 px-1.5 py-0.5 rounded font-medium uppercase tracking-wide">
+                          Deleted by user
+                        </span>
+                      )}
+                      {entry.removed && !entry.removedBy && (
+                        <span className="text-xs bg-gray-800 text-gray-500 px-1.5 py-0.5 rounded font-medium uppercase tracking-wide">
+                          Removed
+                        </span>
+                      )}
                       <span className="text-xs text-gray-500">u/{entry.author}</span>
                       <span className="text-xs text-gray-600">
                         {entry.type === 'comment' ? 'comment' : 'post'}

@@ -110,6 +110,8 @@ export async function handleComboAction(
   if (action.remove) {
     try {
       await context.reddit.remove(itemId, false)
+      // Mark as mod-removed (preserves history with visual flag)
+      await redis.hSet(Keys.sentinelRemoved(subName), { [itemId]: 'mod' })
     } catch {}
   }
 

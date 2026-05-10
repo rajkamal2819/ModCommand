@@ -20,8 +20,14 @@ export async function handleSentinelLoad(context: Context): Promise<{
     threshold = ((await context.settings.get('aigcThreshold')) as number | undefined) ?? 70
   }
 
-  // zRange returns entries ordered by score (timestamp); reverse to show newest first
-  const rawEntries = await redis.zRange(Keys.sentinelFeed(subreddit.name), '+inf', '-inf', { by: 'score', reverse: true })
+  // Fetch all entries by index (Devvit Redis doesn't accept +inf/-inf strings reliably)
+  const feedKey = Keys.sentinelFeed(subreddit.name)
+  const removedKey = Keys.sentinelRemoved(subreddit.name)
+  const [rawEntries, removedIds] = await Promise.all([
+    redis.zRange(feedKey, 0, -1),
+    redis.hGetAll(removedKey),
+  ])
+  const removedMap = removedIds ?? {}
 
   const entries: SentinelEntry[] = rawEntries
     .map((item) => {
@@ -32,6 +38,12 @@ export async function handleSentinelLoad(context: Context): Promise<{
       }
     })
     .filter((e): e is SentinelEntry => e !== null)
+    .map((e) => {
+      const by = removedMap[e.id]
+      return by
+        ? { ...e, removed: true, removedBy: by === 'mod' ? 'mod' as const : 'user' as const }
+        : e
+    })
     .sort((a, b) => b.score - a.score)
 
   return { entries, threshold }

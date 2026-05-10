@@ -28,7 +28,7 @@ export default function EditWatch({ entries, send }: Props) {
     return (
       <div
         key={entry.itemId}
-        className="border-b border-gray-800"
+        className={`border-b border-gray-800 ${entry.removed ? 'opacity-60' : ''}`}
       >
         {/* Summary row */}
         <button
@@ -39,7 +39,7 @@ export default function EditWatch({ entries, send }: Props) {
             <span className={`text-xs font-bold px-2 py-0.5 rounded ${SCORE_STYLES[entry.score]}`}>
               {entry.score}
             </span>
-            <span className="text-sm text-gray-200 flex-1 text-left line-clamp-1">
+            <span className={`text-sm flex-1 text-left line-clamp-1 ${entry.removed ? 'text-gray-500 line-through' : 'text-gray-200'}`}>
               {entry.title}
             </span>
             <span className="text-xs text-gray-600 shrink-0">
@@ -48,6 +48,21 @@ export default function EditWatch({ entries, send }: Props) {
             <span className="text-xs text-gray-600">{isOpen ? '▲' : '▼'}</span>
           </div>
           <div className="flex items-center gap-2 mt-1 ml-12">
+            {entry.removed && entry.removedBy === 'mod' && (
+              <span className="text-xs bg-red-900/60 text-red-300 px-1.5 py-0.5 rounded font-medium uppercase tracking-wide">
+                Removed by mod
+              </span>
+            )}
+            {entry.removed && entry.removedBy === 'user' && (
+              <span className="text-xs bg-gray-700 text-gray-400 px-1.5 py-0.5 rounded font-medium uppercase tracking-wide">
+                Deleted by user
+              </span>
+            )}
+            {entry.removed && !entry.removedBy && (
+              <span className="text-xs bg-gray-800 text-gray-500 px-1.5 py-0.5 rounded font-medium uppercase tracking-wide">
+                Removed
+              </span>
+            )}
             <span className="text-xs text-gray-500">u/{entry.author}</span>
             <span className="text-xs text-gray-600">{entry.type}</span>
             {entry.status !== 'flagged' && (

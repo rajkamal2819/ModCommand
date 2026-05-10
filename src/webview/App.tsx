@@ -32,6 +32,15 @@ export default function App() {
   const [workloadPeriod, setWorkloadPeriod] = useState<'7d' | '30d'>('7d')
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
   const [loading, setLoading] = useState(false)
+  const [accessDenied, setAccessDenied] = useState(false)
+  const [isDark, setIsDark] = useState(
+    () => localStorage.getItem('mc-theme') !== 'light'
+  )
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', isDark)
+    localStorage.setItem('mc-theme', isDark ? 'dark' : 'light')
+  }, [isDark])
 
   // Handle tab switch — load data lazily
   useEffect(() => {
@@ -92,6 +101,10 @@ export default function App() {
       case 'ACTION_SUCCESS':
         showToast(msg.message, 'success')
         break
+      case 'ACCESS_DENIED':
+        setAccessDenied(true)
+        setLoading(false)
+        break
       case 'ERROR':
         showToast(msg.message, 'error')
         setLoading(false)
@@ -111,17 +124,50 @@ export default function App() {
     setTimeout(() => setLoading(false), 10000) // safety timeout
   }
 
+  if (accessDenied) {
+    return (
+      <div className="flex flex-col h-screen bg-gray-950 text-gray-100 font-sans items-center justify-center">
+        <div className="text-center space-y-3">
+          <div className="text-4xl">🔒</div>
+          <div className="text-lg font-semibold text-gray-200">Moderators Only</div>
+          <div className="text-sm text-gray-500">This dashboard is restricted to subreddit moderators.</div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col h-screen bg-gray-950 text-gray-100 font-sans">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2 bg-gray-900 border-b border-gray-800">
         <span className="font-bold text-orange-500 text-lg tracking-tight">ModCommand</span>
-        <button
-          onClick={() => { setLoading(true); send({ type: 'TRIAGE_REFRESH' }) }}
-          className="text-xs text-gray-400 hover:text-gray-200 transition-colors"
-        >
-          ↻ Refresh
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setIsDark((d) => !d)}
+            title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+            className={`
+              relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full
+              transition-colors duration-200 focus:outline-none
+              ${isDark ? 'bg-gray-700' : 'bg-orange-400'}
+            `}
+          >
+            <span
+              className={`
+                inline-flex h-4 w-4 items-center justify-center rounded-full bg-white shadow
+                transform transition-transform duration-200 text-[9px]
+                ${isDark ? 'translate-x-0.5' : 'translate-x-[18px]'}
+              `}
+            >
+              {isDark ? '🌙' : '☀️'}
+            </span>
+          </button>
+          <button
+            onClick={() => { setLoading(true); send({ type: 'TRIAGE_REFRESH' }) }}
+            className="text-xs text-gray-400 hover:text-gray-200 transition-colors"
+          >
+            ↻ Refresh
+          </button>
+        </div>
       </div>
 
       {/* Tab bar */}

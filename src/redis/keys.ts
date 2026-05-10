@@ -12,8 +12,9 @@ export const Keys = {
   appealQueue:  (subName: string) => `appealq:${subName}`,
 
   // AI Sentinel — scored content cache + feed list
-  aiScore:      (hash: string)    => `ai:${hash}`,
-  sentinelFeed: (subName: string) => `sentinel:${subName}`,
+  aiScore:         (hash: string)    => `ai:${hash}`,
+  sentinelFeed:    (subName: string) => `sentinel:${subName}`,
+  sentinelRemoved: (subName: string) => `sentinel:removed:${subName}`,
 
   // Workload Wall — per-mod sorted sets and hash counts
   modActions:   (modName: string) => `mod:${modName}:actions`,
@@ -22,4 +23,7 @@ export const Keys = {
   // App metadata
   installedAt:  (subId: string)   => `installed:${subId}`,
   settings:     (subId: string)   => `settings:${subId}`,
+
+  // Mod check cache (60s TTL)
+  modCheck:     (subName: string, username: string) => `modcheck:${subName}:${username}`,
 }

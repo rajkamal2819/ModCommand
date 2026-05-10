@@ -7,14 +7,20 @@ export async function handleEditWatchLoad(context: Context): Promise<EditWatchEn
   const subreddit = await context.reddit.getCurrentSubreddit()
 
   // zRange returns { member, score }[] — sorted oldest to newest by default
-  const rawEntries = await redis.zRange(Keys.editFeed(subreddit.name), 0, -1)
+  const [rawEntries, removedMap] = await Promise.all([
+    redis.zRange(Keys.editFeed(subreddit.name), 0, -1),
+    redis.hGetAll(Keys.sentinelRemoved(subreddit.name)),
+  ])
+  const removed = removedMap ?? {}
 
   const entries: EditWatchEntry[] = rawEntries
     .map((item) => {
       try {
         const data = JSON.parse(item.member) as Record<string, string>
+        const itemId = data['itemId'] ?? data['id'] ?? ''
+        const removedBy = removed[itemId]
         return {
-          itemId: data['itemId'] ?? data['id'] ?? '',
+          itemId,
           postId: data['postId'] ?? data['itemId'] ?? data['id'] ?? '',
           title: data['title'] ?? 'Unknown',
           author: data['author'] ?? 'unknown',
@@ -28,15 +34,25 @@ export async function handleEditWatchLoad(context: Context): Promise<EditWatchEn
           deltaMinutes: parseInt(data['deltaMinutes'] ?? '0', 10),
           score: (data['score'] ?? 'LOW') as 'HIGH' | 'MEDIUM' | 'LOW',
           status: (data['status'] ?? 'flagged') as 'flagged' | 'innocent' | 'ignored',
-        } satisfies EditWatchEntry
+          removed: !!removedBy,
+          removedBy: removedBy === 'mod' ? ('mod' as const) : removedBy === 'user' ? ('user' as const) : undefined,
+        } as EditWatchEntry
       } catch {
         return null
       }
     })
     .filter((e): e is EditWatchEntry => e !== null)
 
+  // Dedupe: keep only the latest entry per itemId (in case of historical duplicate writes)
+  const byId = new Map<string, EditWatchEntry>()
+  for (const e of entries) {
+    const existing = byId.get(e.itemId)
+    if (!existing || e.editedAt > existing.editedAt) byId.set(e.itemId, e)
+  }
+  const deduped = Array.from(byId.values())
+
   const order = { HIGH: 0, MEDIUM: 1, LOW: 2 }
-  return entries.sort((a, b) => order[a.score] - order[b.score])
+  return deduped.sort((a, b) => order[a.score] - order[b.score])
 }
 
 export async function handleEditWatchAction(

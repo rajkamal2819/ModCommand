@@ -15,18 +15,67 @@ body,
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
-/* Custom scrollbar for dark theme */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: #111827;
-}
-::-webkit-scrollbar-thumb {
-  background: #374151;
-  border-radius: 3px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #4b5563;
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+
+html.dark ::-webkit-scrollbar-track { background: #111827; }
+html.dark ::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
+html.dark ::-webkit-scrollbar-thumb:hover { background: #4b5563; }
+
+html:not(.dark) ::-webkit-scrollbar-track { background: #f3f4f6; }
+html:not(.dark) ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
+html:not(.dark) ::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+
+/* ── Light-mode overrides ───────────────────────────────────────────────────
+   All component classes are hardcoded dark; these overrides flip them when
+   the `dark` class is absent from <html>. !important beats Tailwind specificity.
+   ─────────────────────────────────────────────────────────────────────────── */
+html:not(.dark) { color-scheme: light; }
+
+/* Backgrounds */
+html:not(.dark) .bg-gray-950  { background-color: #f9fafb !important; }
+html:not(.dark) .bg-gray-900  { background-color: #f3f4f6 !important; }
+html:not(.dark) .bg-gray-800  { background-color: #e5e7eb !important; }
+html:not(.dark) .bg-gray-700  { background-color: #d1d5db !important; }
+
+/* Semi-transparent backgrounds */
+html:not(.dark) .bg-gray-900\/50  { background-color: rgba(229,231,235,0.5) !important; }
+html:not(.dark) .bg-gray-950\/60  { background-color: rgba(249,250,251,0.7) !important; }
+html:not(.dark) .bg-gray-800\/60  { background-color: rgba(229,231,235,0.6) !important; }
+
+/* Text */
+html:not(.dark) .text-gray-100 { color: #111827 !important; }
+html:not(.dark) .text-gray-200 { color: #1f2937 !important; }
+html:not(.dark) .text-gray-300 { color: #374151 !important; }
+html:not(.dark) .text-gray-400 { color: #6b7280 !important; }
+html:not(.dark) .text-gray-500 { color: #9ca3af !important; }
+html:not(.dark) .text-gray-600 { color: #d1d5db !important; }
+
+/* Borders */
+html:not(.dark) .border-gray-800 { border-color: #e5e7eb !important; }
+html:not(.dark) .border-gray-700 { border-color: #d1d5db !important; }
+html:not(.dark) .border-gray-600 { border-color: #9ca3af !important; }
+
+/* Hover backgrounds */
+html:not(.dark) .hover\:bg-gray-900\/50:hover { background-color: rgba(229,231,235,0.5) !important; }
+html:not(.dark) .hover\:bg-gray-800:hover { background-color: #e5e7eb !important; }
+html:not(.dark) .hover\:bg-gray-700:hover { background-color: #d1d5db !important; }
+
+/* Diff viewer specific */
+html:not(.dark) .bg-red-900\/40   { background-color: rgba(254,202,202,0.5) !important; }
+html:not(.dark) .bg-green-900\/40 { background-color: rgba(187,247,208,0.5) !important; }
+html:not(.dark) .text-red-300     { color: #dc2626 !important; }
+html:not(.dark) .text-green-300   { color: #16a34a !important; }
+
+/* Status/badge backgrounds that darken well on light bg */
+html:not(.dark) .bg-gray-800.text-gray-400,
+html:not(.dark) .bg-gray-700.text-gray-400 { background-color: #e5e7eb !important; color: #374151 !important; }
+
+/* Input/textarea */
+html:not(.dark) input,
+html:not(.dark) textarea,
+html:not(.dark) select {
+  background-color: #ffffff !important;
+  color: #111827 !important;
+  border-color: #d1d5db !important;
 }
