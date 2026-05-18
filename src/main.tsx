@@ -19,7 +19,7 @@ import { handleTriageInit, handleClaim, handleRelease, handleComboAction, handle
 import { handleEditWatchLoad, handleEditWatchAction } from './modules/editWatch.js'
 import { handleSentinelLoad, handleSentinelThresholdUpdate } from './modules/aiSentinel.js'
 import { handleAppealLoad, handleAppealResolve } from './modules/appealDesk.js'
-import { handleWorkloadLoad, runWeeklyDigest } from './modules/workloadWall.js'
+import { handleWorkloadLoad, handleWorkloadModActions, runWeeklyDigest } from './modules/workloadWall.js'
 import { handleCopilotRecommend, markCopilotApplied, handleCopilotChatLoad, handleCopilotChatSend, seedChatWithVerdict } from './modules/copilot.js'
 import { handleDossierLoad, handleDossierPinToggle, handleDossierSummary } from './modules/dossier.js'
 import { Keys } from './redis/keys.js'
@@ -371,8 +371,13 @@ Devvit.addCustomPostType({
               break
             }
             case 'WORKLOAD_LOAD': {
-              const mods = await handleWorkloadLoad(message.period, context)
-              send({ type: 'WORKLOAD_STATE', mods, period: message.period })
+              const { mods, queueContext } = await handleWorkloadLoad(message.period, context)
+              send({ type: 'WORKLOAD_STATE', mods, period: message.period, queueContext })
+              break
+            }
+            case 'WORKLOAD_MOD_ACTIONS_LOAD': {
+              const actions = await handleWorkloadModActions(message.mod, message.period, context)
+              send({ type: 'WORKLOAD_MOD_ACTIONS_STATE', mod: message.mod, actions })
               break
             }
             case 'COPILOT_RECOMMEND': {

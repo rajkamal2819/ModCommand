@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useDevvitBridge } from './hooks/useDevvitBridge'
-import type { ServerMessage, ModQueueItem, Appeal, SentinelEntry, EditWatchEntry, ModStats, CopilotRecommendation, CopilotChatMessage, DossierState, DossierSummary, ThresholdSuggestion } from '../shared/messages'
+import type { ServerMessage, ModQueueItem, Appeal, SentinelEntry, EditWatchEntry, ModStats, CopilotRecommendation, CopilotChatMessage, DossierState, DossierSummary, ThresholdSuggestion, WorkloadQueueContext, WorkloadModAction } from '../shared/messages'
 import TriageBoard from './tabs/TriageBoard'
 import AppealDesk from './tabs/AppealDesk'
 import AISentinel from './tabs/AISentinel'
@@ -32,6 +32,8 @@ export default function App() {
   const [editEntries, setEditEntries] = useState<EditWatchEntry[]>([])
   const [modStats, setModStats] = useState<ModStats[]>([])
   const [workloadPeriod, setWorkloadPeriod] = useState<'7d' | '30d'>('7d')
+  const [workloadQueue, setWorkloadQueue] = useState<WorkloadQueueContext>({ unclaimed: 0, inReview: 0, pendingApproval: 0, doneRecent: 0 })
+  const [workloadModActions, setWorkloadModActions] = useState<Record<string, WorkloadModAction[]>>({})
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
   const [loading, setLoading] = useState(false)
   const [accessDenied, setAccessDenied] = useState(false)
@@ -152,7 +154,13 @@ export default function App() {
       case 'WORKLOAD_STATE':
         setModStats(msg.mods)
         setWorkloadPeriod(msg.period)
+        setWorkloadQueue(msg.queueContext)
+        // Reset the drill-down cache when the period changes — entries are period-scoped.
+        setWorkloadModActions({})
         setLoading(false)
+        break
+      case 'WORKLOAD_MOD_ACTIONS_STATE':
+        setWorkloadModActions((prev) => ({ ...prev, [msg.mod]: msg.actions }))
         break
       case 'ACTION_SUCCESS':
         showToast(msg.message, 'success')
@@ -291,7 +299,14 @@ export default function App() {
           <EditWatch entries={editEntries} send={send} onCopilot={openCopilot} onDossier={openDossier} />
         )}
         {activeTab === 'workload' && (
-          <WorkloadWall mods={modStats} period={workloadPeriod} send={send} />
+          <WorkloadWall
+            mods={modStats}
+            period={workloadPeriod}
+            queueContext={workloadQueue}
+            modActions={workloadModActions}
+            send={send}
+            onDossier={openDossier}
+          />
         )}
 
         <CopilotPanel

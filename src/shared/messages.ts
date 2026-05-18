@@ -186,6 +186,23 @@ export interface ModStats {
   last30Days: number
 }
 
+// Live queue snapshot — drives the "what's happening right now" card on Workload Wall.
+export interface WorkloadQueueContext {
+  unclaimed: number
+  inReview: number
+  pendingApproval: number
+  doneRecent: number // actions completed in last hour
+}
+
+// One audit-log entry surfaced in a mod's drill-down.
+export interface WorkloadModAction {
+  ts: number
+  action: string
+  itemId?: string
+  targetUser?: string
+  reason?: string
+}
+
 // ─── Client → Server messages ─────────────────────────────────────────────────
 
 export type ClientMessage =
@@ -201,6 +218,7 @@ export type ClientMessage =
   | { type: 'EDITWATCH_LOAD' }
   | { type: 'EDITWATCH_ACTION'; itemId: string; action: 'restore_remove' | 'innocent' | 'ignore' }
   | { type: 'WORKLOAD_LOAD'; period: '7d' | '30d' }
+  | { type: 'WORKLOAD_MOD_ACTIONS_LOAD'; mod: string; period: '7d' | '30d' }
   | { type: 'COPILOT_RECOMMEND'; itemId: string; force?: boolean }
   | { type: 'COPILOT_APPLY'; itemId: string }
   | { type: 'COPILOT_CHAT_LOAD'; itemId: string }
@@ -218,7 +236,8 @@ export type ServerMessage =
   | { type: 'APPEAL_STATE'; appeals: Appeal[] }
   | { type: 'SENTINEL_STATE'; entries: SentinelEntry[]; threshold: number; suggestion?: ThresholdSuggestion | null }
   | { type: 'EDITWATCH_STATE'; entries: EditWatchEntry[] }
-  | { type: 'WORKLOAD_STATE'; mods: ModStats[]; period: '7d' | '30d' }
+  | { type: 'WORKLOAD_STATE'; mods: ModStats[]; period: '7d' | '30d'; queueContext: WorkloadQueueContext }
+  | { type: 'WORKLOAD_MOD_ACTIONS_STATE'; mod: string; actions: WorkloadModAction[] }
   | { type: 'ACTION_SUCCESS'; message: string }
   | { type: 'ERROR'; message: string }
   | { type: 'ACCESS_DENIED' }
