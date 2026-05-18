@@ -433,47 +433,65 @@ export async function copilotChat(
     ...history.map((h) => ({ role: h.role, content: h.content })),
     { role: 'user', content: userMessage },
   ]
+  const body = JSON.stringify({
+    model: 'gemini-2.5-flash',
+    messages,
+    response_format: { type: 'json_object' },
+  })
 
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 15000)
-  try {
-    console.log(`[Gemini] copilotChat turn=${history.length + 1}`)
-    const res = await fetch(
-      'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: 'gemini-2.5-flash',
-          messages,
-          response_format: { type: 'json_object' },
-        }),
-        signal: controller.signal,
+  // Retry once on transient Gemini errors (503 UNAVAILABLE during traffic
+  // spikes, 429 rate-limit). 800ms delay between attempts.
+  let lastErr: Error | undefined
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 15000)
+    try {
+      console.log(`[Gemini] copilotChat turn=${history.length + 1} attempt=${attempt + 1}`)
+      const res = await fetch(
+        'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+          body,
+          signal: controller.signal,
+        }
+      )
+      clearTimeout(timeout)
+      if (!res.ok) {
+        const errBody = await res.text()
+        const transient = res.status === 503 || res.status === 429
+        const message = `Gemini HTTP ${res.status}: ${errBody.slice(0, 200)}`
+        if (transient && attempt === 0) {
+          console.log(`[Gemini] transient ${res.status}, will retry in 800ms`)
+          lastErr = new Error(message)
+          await sleep(800)
+          continue
+        }
+        throw new Error(message)
       }
-    )
-    clearTimeout(timeout)
-    if (!res.ok) {
-      const errBody = await res.text()
-      throw new Error(`Gemini HTTP ${res.status}: ${errBody.slice(0, 200)}`)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data = (await res.json()) as any
+      const rawContent = data?.choices?.[0]?.message?.content ?? ''
+      const cleaned = rawContent.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim()
+      const parsed = JSON.parse(cleaned) as CopilotChatReply
+      if (typeof parsed.content !== 'string' || parsed.content.length === 0) {
+        throw new Error('Chat reply had empty content')
+      }
+      if (!Array.isArray(parsed.suggestions)) parsed.suggestions = []
+      parsed.suggestions = parsed.suggestions.filter((s) => typeof s === 'string' && s.length > 0).slice(0, 3)
+      return parsed
+    } catch (err) {
+      clearTimeout(timeout)
+      lastErr = err instanceof Error ? err : new Error(String(err))
+      // Only retry on the first attempt; bail on the second.
+      if (attempt === 0 && /HTTP (503|429)/.test(lastErr.message)) {
+        await sleep(800)
+        continue
+      }
+      throw lastErr
     }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const data = (await res.json()) as any
-    const rawContent = data?.choices?.[0]?.message?.content ?? ''
-    const cleaned = rawContent.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim()
-    const parsed = JSON.parse(cleaned) as CopilotChatReply
-    if (typeof parsed.content !== 'string' || parsed.content.length === 0) {
-      throw new Error('Chat reply had empty content')
-    }
-    if (!Array.isArray(parsed.suggestions)) parsed.suggestions = []
-    parsed.suggestions = parsed.suggestions.filter((s) => typeof s === 'string' && s.length > 0).slice(0, 3)
-    return parsed
-  } catch (err) {
-    clearTimeout(timeout)
-    throw err
   }
+  throw lastErr ?? new Error('copilotChat: exhausted retries')
 }
 
 export async function dossierSummary(
