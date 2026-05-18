@@ -54,6 +54,10 @@ export default function CopilotPanel({ itemId, recommendation, loading, chatMess
     return !isNaN(stored) && stored >= MIN_WIDTH && stored <= MAX_WIDTH ? stored : DEFAULT_WIDTH
   })
   const [resizing, setResizing] = useState(false)
+  // Optimistic UI: render the user's outgoing message + a typing bubble
+  // immediately on send, before the server echoes back. Cleared when the
+  // server's COPILOT_CHAT_STATE arrives (recognized by matching the content).
+  const [pendingSend, setPendingSend] = useState<{ content: string; ts: number } | null>(null)
 
   useEffect(() => {
     setTimedOut(false)
@@ -144,11 +148,32 @@ export default function CopilotPanel({ itemId, recommendation, loading, chatMess
 
   function sendChat(content?: string) {
     const payload = (content ?? input).trim()
-    if (!payload || !itemId || chatThinking) return
+    if (!payload || !itemId || chatThinking || pendingSend) return
+    // Optimistic: paint the user bubble + typing indicator instantly.
+    setPendingSend({ content: payload, ts: Date.now() })
     send({ type: 'COPILOT_CHAT_SEND', itemId, content: payload })
     setInput('')
     setShowSlashMenu(false)
   }
+
+  // Clear the optimistic pending bubble once the server echoes it back in the
+  // chat history. Matching by content + recency is loose but works since the
+  // user can't double-send (button disabled while pending).
+  useEffect(() => {
+    if (!pendingSend) return
+    const echoed = chatMessages.some(
+      (m) => m.role === 'user' && m.content === pendingSend.content && m.ts >= pendingSend.ts - 1000
+    )
+    if (echoed) setPendingSend(null)
+  }, [chatMessages, pendingSend])
+
+  // Safety net: clear pendingSend if it sits for >30s with no echo — prevents
+  // the input getting stuck disabled if a message somehow drops.
+  useEffect(() => {
+    if (!pendingSend) return
+    const t = setTimeout(() => setPendingSend(null), 30000)
+    return () => clearTimeout(t)
+  }, [pendingSend])
 
   function handleInputChange(value: string) {
     setInput(value)
@@ -187,16 +212,16 @@ export default function CopilotPanel({ itemId, recommendation, loading, chatMess
 
   return (
     <div
-      className="absolute top-0 right-0 bottom-0 bg-gray-900 border-l border-gray-800 shadow-2xl flex flex-col z-20 animate-[slide-in_0.2s_ease-out]"
+      className="absolute top-2 right-2 bottom-2 bg-gray-900 rounded-2xl border border-gray-800/70 ring-1 ring-orange-500/5 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.7),_0_8px_20px_-8px_rgba(0,0,0,0.5)] flex flex-col z-20 animate-[slide-in_0.2s_ease-out] overflow-hidden"
       style={{ width: `${width}px` }}
     >
-      {/* Resize handle — visible always so it's discoverable */}
+      {/* Resize handle — sits on the left edge inside the rounded card */}
       <div
         onMouseDown={(e) => { e.preventDefault(); setResizing(true) }}
         onDoubleClick={() => setWidth(DEFAULT_WIDTH)}
         title="Drag to resize · double-click to reset"
-        className={`absolute top-0 left-0 bottom-0 w-1 cursor-col-resize z-30 transition-colors ${
-          resizing ? 'bg-orange-500' : 'bg-gray-800 hover:bg-orange-500/60'
+        className={`absolute top-2 left-0 bottom-2 w-1 cursor-col-resize z-30 rounded-r transition-colors ${
+          resizing ? 'bg-orange-500' : 'bg-gray-800/60 hover:bg-orange-500/70'
         }`}
         aria-label="Resize panel"
       />
@@ -314,7 +339,18 @@ export default function CopilotPanel({ itemId, recommendation, loading, chatMess
             {chatMessages.map((m, i) => (
               <ChatBubble key={i} message={m} onCopy={copyToClipboard} />
             ))}
-            {chatThinking && <TypingBubble />}
+            {/* Optimistic user bubble — paints instantly when the user sends,
+                replaced once the server echoes the message back in the chat
+                state. Sitting alongside the typing dots gives near-zero
+                perceived latency. */}
+            {pendingSend && (
+              <div className="flex justify-end mc-bubble-enter">
+                <div className="max-w-[85%] bg-gray-800 text-gray-100 text-sm rounded-2xl rounded-br-md px-3 py-2 whitespace-pre-wrap opacity-90">
+                  {pendingSend.content}
+                </div>
+              </div>
+            )}
+            {(chatThinking || pendingSend) && <TypingBubble />}
             {/* Empty-state hint: only when chat has just the seeded verdict */}
             {hasChatStarted && noUserTurnsYet && !chatThinking && (
               <div className="text-[11px] text-gray-500 italic px-1 pt-1 border-t border-gray-800/60">
@@ -384,18 +420,25 @@ export default function CopilotPanel({ itemId, recommendation, loading, chatMess
               rows={1}
               className="flex-1 bg-gray-900 border border-gray-700 focus:border-orange-500/60 text-sm text-gray-100 placeholder-gray-500 rounded-md px-3 py-2 resize-none focus:outline-none"
               style={{ minHeight: '38px', maxHeight: '120px' }}
-              disabled={chatThinking}
+              disabled={chatThinking || !!pendingSend}
             />
             <button
               onClick={() => sendChat()}
-              disabled={!input.trim() || chatThinking}
-              className={`text-xs px-3 py-2 rounded-md font-medium transition-colors ${
-                !input.trim() || chatThinking
+              disabled={!input.trim() || chatThinking || !!pendingSend}
+              className={`text-xs px-3 py-2 rounded-md font-medium transition-colors inline-flex items-center gap-1.5 ${
+                !input.trim() || chatThinking || !!pendingSend
                   ? 'bg-gray-800 text-gray-500 cursor-not-allowed'
                   : 'bg-orange-600 hover:bg-orange-500 text-white'
               }`}
             >
-              Send
+              {(chatThinking || pendingSend) ? (
+                <>
+                  <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  <span>Sending</span>
+                </>
+              ) : (
+                'Send'
+              )}
             </button>
           </div>
           <div className="text-[10px] text-gray-500 mt-1.5 px-0.5">

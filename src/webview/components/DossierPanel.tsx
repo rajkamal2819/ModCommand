@@ -117,16 +117,16 @@ export default function DossierPanel({ username, data, summary, loading, send, o
 
   return (
     <div
-      className="absolute top-0 right-0 bottom-0 bg-gray-900 border-l border-gray-800 shadow-2xl flex flex-col z-20 animate-[slide-in_0.2s_ease-out]"
+      className="absolute top-2 right-2 bottom-2 bg-gray-900 rounded-2xl border border-gray-800/70 ring-1 ring-orange-500/5 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.7),_0_8px_20px_-8px_rgba(0,0,0,0.5)] flex flex-col z-20 animate-[slide-in_0.2s_ease-out] overflow-hidden"
       style={{ width: `${width}px` }}
     >
-      {/* Resize handle — visible always */}
+      {/* Resize handle */}
       <div
         onMouseDown={(e) => { e.preventDefault(); setResizing(true) }}
         onDoubleClick={() => setWidth(DEFAULT_WIDTH)}
         title="Drag to resize · double-click to reset"
-        className={`absolute top-0 left-0 bottom-0 w-1 cursor-col-resize z-30 transition-colors ${
-          resizing ? 'bg-orange-500' : 'bg-gray-800 hover:bg-orange-500/60'
+        className={`absolute top-2 left-0 bottom-2 w-1 cursor-col-resize z-30 rounded-r transition-colors ${
+          resizing ? 'bg-orange-500' : 'bg-gray-800/60 hover:bg-orange-500/70'
         }`}
         aria-label="Resize panel"
       />
