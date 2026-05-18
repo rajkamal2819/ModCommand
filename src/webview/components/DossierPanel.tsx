@@ -74,17 +74,32 @@ export default function DossierPanel({ username, data, summary, loading, send, o
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-orange-500 text-base">🔍</span>
           <span className="font-semibold text-gray-100 text-sm truncate">u/{username}</span>
-          {data?.pinned && (
-            <span className="text-xs bg-orange-900/60 text-orange-300 px-1.5 py-0.5 rounded uppercase font-medium tracking-wide">Pinned</span>
-          )}
         </div>
-        <button
-          onClick={onClose}
-          className="text-gray-500 hover:text-gray-200 text-lg leading-none"
-          aria-label="Close"
-        >
-          ×
-        </button>
+        <div className="flex items-center gap-1 shrink-0">
+          {/* Pin toggle — always visible in the header so the feature is
+              discoverable on first open. Filled star = pinned. */}
+          {data && !data.isModerator && (
+            <button
+              onClick={togglePin}
+              aria-label={data.pinned ? `Unpin u/${username}` : `Pin u/${username} for quick access`}
+              title={data.pinned ? 'Unpin user' : 'Pin user for quick access'}
+              className={`text-sm leading-none px-2 py-1 rounded transition-colors ${
+                data.pinned
+                  ? 'bg-orange-700 text-white hover:bg-orange-600'
+                  : 'text-gray-500 hover:text-orange-400 hover:bg-gray-800'
+              }`}
+            >
+              {data.pinned ? '★' : '☆'}
+            </button>
+          )}
+          <button
+            onClick={onClose}
+            className="text-gray-500 hover:text-gray-200 text-lg leading-none px-2"
+            aria-label="Close dossier panel"
+          >
+            ×
+          </button>
+        </div>
       </div>
 
       {/* Body */}
@@ -166,7 +181,7 @@ export default function DossierPanel({ username, data, summary, loading, send, o
                 Recent items ({data.recentItems.length})
               </div>
               {data.recentItems.length === 0 ? (
-                <div className="text-xs text-gray-600 italic">
+                <div className="text-xs text-gray-500 italic">
                   {data.installedAt
                     ? `No tracked activity since ModCommand install on ${new Date(data.installedAt).toLocaleDateString()}`
                     : 'No tracked activity'}
@@ -184,7 +199,7 @@ export default function DossierPanel({ username, data, summary, loading, send, o
                         {item.title}
                       </div>
                       <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                        <span className="text-gray-600">{item.type}</span>
+                        <span className="text-gray-500">{item.type}</span>
                         {item.aigcScore !== null && item.aigcScore >= 40 && (
                           <span className={`px-1 rounded ${
                             item.aigcScore >= 80 ? 'bg-red-900/60 text-red-300' :
@@ -225,7 +240,7 @@ export default function DossierPanel({ username, data, summary, loading, send, o
                         {entry.action.replace(/_/g, ' ')}
                       </span>
                       <span className="text-gray-500">by u/{entry.mod}</span>
-                      <span className="text-gray-600 ml-auto">{ageString(entry.ts)}</span>
+                      <span className="text-gray-500 ml-auto">{ageString(entry.ts)}</span>
                     </div>
                   ))}
                 </div>
@@ -235,25 +250,10 @@ export default function DossierPanel({ username, data, summary, loading, send, o
         )}
       </div>
 
-      {/* Footer */}
-      {data && !loading && !data.isModerator && (
-        <div className="border-t border-gray-800 p-3 flex gap-2">
-          <button
-            onClick={togglePin}
-            className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
-              data.pinned
-                ? 'bg-orange-700 hover:bg-orange-600 text-white'
-                : 'bg-gray-800 hover:bg-gray-700 text-gray-300'
-            }`}
-          >
-            {data.pinned ? '🔍 Unpin user' : '🔍 Pin user'}
-          </button>
-          <button
-            onClick={onClose}
-            className="px-4 py-2 rounded-lg text-sm bg-gray-800 hover:bg-gray-700 text-gray-300 transition-colors"
-          >
-            Close
-          </button>
+      {/* Footer — pinned-state context so the star action makes sense */}
+      {data && !loading && !data.isModerator && data.pinned && (
+        <div className="border-t border-gray-800 p-2.5 text-xs text-orange-300 bg-orange-950/30 text-center">
+          ⭐ This user is pinned — they'll surface in the audit log.
         </div>
       )}
     </div>

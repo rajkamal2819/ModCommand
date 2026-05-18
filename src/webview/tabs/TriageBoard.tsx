@@ -32,8 +32,12 @@ function ComboModal({ itemId, onSubmit, onClose }: ComboModalProps) {
   const [removalReason, setRemovalReason] = useState('')
   const [banReason, setBanReason] = useState('')
   const [banDuration, setBanDuration] = useState<string>('')
+  const [confirmText, setConfirmText] = useState('')
 
   const isApprove = decision === 'approve'
+  // A permanent ban is the highest-stakes action — require typed confirmation.
+  const isPermaBan = !isApprove && ban && !banDuration
+  const permaBanReady = !isPermaBan || confirmText.trim().toUpperCase() === 'BAN'
 
   function submit() {
     if (isApprove) {
@@ -107,20 +111,43 @@ function ComboModal({ itemId, onSubmit, onClose }: ComboModalProps) {
 
             {ban && (
               <div className="pl-7 space-y-2 mb-3">
-                <input
-                  type="text"
-                  placeholder="Ban reason"
-                  value={banReason}
-                  onChange={(e) => setBanReason(e.target.value)}
-                  className="w-full bg-gray-700 text-gray-200 text-sm rounded px-3 py-1.5 border border-gray-600 focus:outline-none focus:border-orange-500"
-                />
-                <input
-                  type="number"
-                  placeholder="Duration in days (leave blank for permanent)"
-                  value={banDuration}
-                  onChange={(e) => setBanDuration(e.target.value)}
-                  className="w-full bg-gray-700 text-gray-200 text-sm rounded px-3 py-1.5 border border-gray-600 focus:outline-none focus:border-orange-500"
-                />
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Ban reason</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. repeat rule 3 violations"
+                    value={banReason}
+                    onChange={(e) => setBanReason(e.target.value)}
+                    className="w-full bg-gray-700 text-gray-200 text-sm rounded px-3 py-1.5 border border-gray-600 focus:outline-none focus:border-orange-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">
+                    Duration in days <span className="text-gray-500">(blank = permanent)</span>
+                  </label>
+                  <input
+                    type="number"
+                    placeholder="7"
+                    value={banDuration}
+                    onChange={(e) => setBanDuration(e.target.value)}
+                    className="w-full bg-gray-700 text-gray-200 text-sm rounded px-3 py-1.5 border border-gray-600 focus:outline-none focus:border-orange-500"
+                  />
+                </div>
+                {isPermaBan && (
+                  <div className="bg-red-950/50 border border-red-700/50 rounded p-2.5 space-y-2 mt-2">
+                    <div className="text-xs text-red-300 font-medium flex items-center gap-1.5">
+                      <span>⚠️</span>
+                      <span>This is a PERMANENT ban. Type <span className="font-mono bg-red-950 px-1">BAN</span> to confirm.</span>
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="Type BAN"
+                      value={confirmText}
+                      onChange={(e) => setConfirmText(e.target.value)}
+                      className="w-full bg-gray-900 text-gray-200 text-sm rounded px-3 py-1.5 border border-red-700/60 focus:outline-none focus:border-red-500"
+                    />
+                  </div>
+                )}
               </div>
             )}
 
@@ -137,13 +164,18 @@ function ComboModal({ itemId, onSubmit, onClose }: ComboModalProps) {
         <div className="flex gap-2">
           <button
             onClick={submit}
+            disabled={!permaBanReady}
             className={`flex-1 text-white text-sm py-2 rounded-lg font-medium transition-colors ${
-              isApprove
+              !permaBanReady
+                ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                : isApprove
                 ? 'bg-green-700 hover:bg-green-600'
+                : isPermaBan
+                ? 'bg-red-700 hover:bg-red-600'
                 : 'bg-orange-600 hover:bg-orange-500'
             }`}
           >
-            {isApprove ? 'Approve' : 'Execute'}
+            {isApprove ? 'Approve' : isPermaBan ? 'Permanent ban' : 'Execute'}
           </button>
           <button
             onClick={onClose}
@@ -272,7 +304,7 @@ function DoneCard({ item, onDossier }: { item: ModQueueItem; onDossier?: (userna
       </div>
       <div className="flex items-center justify-between text-xs">
         <span className={action?.approve ? 'text-green-400' : 'text-red-400'}>{summary}</span>
-        <span className="text-gray-600">
+        <span className="text-gray-500">
           {onDossier && item.doneBy ? (
             <button onClick={() => onDossier(item.doneBy!)} className="hover:text-orange-400 transition-colors">u/{item.doneBy}</button>
           ) : (
@@ -341,7 +373,7 @@ export default function TriageBoard({ items, currentMod, send, onCopilot, onDoss
             <div className="flex-1 overflow-y-auto space-y-2 pr-1">
               {grouped[col.id].length === 0 ? (
                 <div className="flex items-center justify-center h-full border border-dashed border-gray-800 rounded-lg p-4 text-center">
-                  <div className="text-xs text-gray-600 leading-relaxed">{EMPTY_HINT[col.id]}</div>
+                  <div className="text-xs text-gray-500 leading-relaxed">{EMPTY_HINT[col.id]}</div>
                 </div>
               ) : (
                 grouped[col.id].map(renderCard)

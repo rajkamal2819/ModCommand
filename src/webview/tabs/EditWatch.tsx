@@ -36,6 +36,8 @@ export default function EditWatch({ entries, send, onCopilot, onDossier }: Props
         <button
           className="w-full text-left px-4 py-3 hover:bg-gray-900/50 transition-colors"
           onClick={() => setExpanded(isOpen ? null : entry.itemId)}
+          aria-expanded={isOpen}
+          aria-label={isOpen ? `Collapse ${entry.title}` : `Expand ${entry.title}`}
         >
           <div className="flex items-center gap-3">
             <span className={`text-xs font-bold px-2 py-0.5 rounded ${SCORE_STYLES[entry.score]}`}>
@@ -44,10 +46,10 @@ export default function EditWatch({ entries, send, onCopilot, onDossier }: Props
             <span className={`text-sm flex-1 text-left line-clamp-1 ${entry.removed ? 'text-gray-500 line-through' : 'text-gray-200'}`}>
               {entry.title}
             </span>
-            <span className="text-xs text-gray-600 shrink-0">
+            <span className="text-xs text-gray-500 shrink-0">
               edited {entry.deltaMinutes}m after report
             </span>
-            <span className="text-xs text-gray-600">{isOpen ? '▲' : '▼'}</span>
+            <span className="text-xs text-gray-500">{isOpen ? '▲' : '▼'}</span>
           </div>
           <div className="flex items-center gap-2 mt-1 ml-12">
             {entry.removed && entry.removedBy === 'mod' && (
@@ -76,7 +78,7 @@ export default function EditWatch({ entries, send, onCopilot, onDossier }: Props
             ) : (
               <span className="text-xs text-gray-500">u/{entry.author}</span>
             )}
-            <span className="text-xs text-gray-600">{entry.type}</span>
+            <span className="text-xs text-gray-500">{entry.type}</span>
             {entry.status !== 'flagged' && (
               <span className="text-xs bg-gray-700 text-gray-400 px-1.5 py-0.5 rounded">
                 {entry.status}
@@ -142,7 +144,7 @@ export default function EditWatch({ entries, send, onCopilot, onDossier }: Props
   return (
     <div className="flex flex-col h-full overflow-y-auto">
       {entries.length === 0 ? (
-        <div className="flex items-center justify-center h-full text-gray-600">
+        <div className="flex items-center justify-center h-full text-gray-500">
           <div className="text-center">
             <div className="text-3xl mb-2">👀</div>
             <div className="text-sm">No edit evasion detected</div>

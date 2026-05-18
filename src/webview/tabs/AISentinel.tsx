@@ -71,20 +71,22 @@ export default function AISentinel({ entries, threshold, send, onCopilot, onDoss
         </span>
       </div>
 
-      {/* Adaptive threshold banner */}
+      {/* Adaptive threshold banner — high-prominence so mods notice the
+          learning loop kicked in. */}
       {showSuggestion && suggestion && (
-        <div className="flex items-center gap-3 px-4 py-2 bg-orange-950/40 border-b border-orange-900/50 shrink-0">
-          <span className="text-xs">💡</span>
-          <div className="flex-1 text-xs">
-            <span className="text-orange-300 font-medium">Suggested: {suggestion.suggested}</span>
-            <span className="text-gray-400">
-              {' — based on '}{suggestion.sampleCount}{' mod decision'}{suggestion.sampleCount === 1 ? '' : 's'}
-              {' · '}{suggestion.aboveRemoved} of {suggestion.aboveRemoved + suggestion.aboveApproved} above the line were removed
-            </span>
+        <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-orange-950/60 to-orange-900/30 border-b border-orange-500/40 shrink-0">
+          <span className="text-xl">💡</span>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm text-orange-200 font-semibold leading-tight">
+              Suggested threshold: <span className="text-orange-100 text-base font-bold">{suggestion.suggested}</span>
+            </div>
+            <div className="text-[11px] text-orange-300/70 leading-tight mt-0.5">
+              From {suggestion.sampleCount} mod decision{suggestion.sampleCount === 1 ? '' : 's'} · {suggestion.aboveRemoved} of {suggestion.aboveRemoved + suggestion.aboveApproved} above this line were removed
+            </div>
           </div>
           <button
             onClick={applySuggestion}
-            className="text-xs bg-orange-600 hover:bg-orange-500 text-white px-3 py-1 rounded transition-colors font-medium"
+            className="text-sm bg-orange-600 hover:bg-orange-500 text-white px-4 py-1.5 rounded-md transition-colors font-semibold shrink-0 shadow-sm"
           >
             Apply
           </button>
@@ -94,7 +96,7 @@ export default function AISentinel({ entries, threshold, send, onCopilot, onDoss
       {/* Feed */}
       <div className="flex-1 overflow-y-auto">
         {visibleEntries.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-gray-600">
+          <div className="flex items-center justify-center h-full text-gray-500">
             <div className="text-center">
               <div className="text-3xl mb-2">🤖</div>
               <div className="text-sm">No content above threshold yet</div>
@@ -147,10 +149,10 @@ export default function AISentinel({ entries, threshold, send, onCopilot, onDoss
                       ) : (
                         <span className="text-xs text-gray-500">u/{entry.author}</span>
                       )}
-                      <span className="text-xs text-gray-600">
+                      <span className="text-xs text-gray-500">
                         {entry.type === 'comment' ? 'comment' : 'post'}
                       </span>
-                      <span className="text-xs text-gray-600">
+                      <span className="text-xs text-gray-500">
                         {new Date(entry.scoredAt).toLocaleTimeString()}
                       </span>
                     </div>
@@ -168,6 +170,8 @@ export default function AISentinel({ entries, threshold, send, onCopilot, onDoss
                     )}
                     <button
                       onClick={() => setExpanded(expanded === entry.id ? null : entry.id)}
+                      aria-expanded={expanded === entry.id}
+                      aria-label={expanded === entry.id ? 'Hide heuristics' : 'Show heuristics'}
                       className="text-xs text-gray-500 hover:text-gray-300 px-1"
                     >
                       {expanded === entry.id ? '▲' : '▼'}

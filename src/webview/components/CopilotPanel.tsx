@@ -182,6 +182,14 @@ export default function CopilotPanel({ itemId, recommendation, loading, chatMess
       const m = chatMessages[i]
       if (m.role === 'assistant' && m.suggestions && m.suggestions.length > 0) return m.suggestions
     }
+    // Fallback during the brief window after the recommendation lands but
+    // before the chat-state message arrives. Keeps the suggestion area from
+    // looking empty during cold-start.
+    if (recommendation) {
+      if (recommendation.action === 'approve') return ['What would change your mind?', 'Any signals pointing the other way?', '/modmail']
+      if (recommendation.action === 'escalate') return ['What would tip this to remove?', 'What would tip this to approve?', '/rule-cite']
+      return ['/removal-reason', "Show me the user's recent pattern", 'Why not escalate instead?']
+    }
     return [] as string[]
   })()
 
@@ -237,7 +245,7 @@ export default function CopilotPanel({ itemId, recommendation, loading, chatMess
               disabled={applyDisabled}
               className={`ml-auto text-xs px-2.5 py-1 rounded font-medium transition-colors ${
                 applyDisabled
-                  ? 'bg-gray-800 text-gray-600 cursor-not-allowed'
+                  ? 'bg-gray-800 text-gray-500 cursor-not-allowed'
                   : 'bg-orange-600 hover:bg-orange-500 text-white'
               }`}
             >
@@ -330,6 +338,23 @@ export default function CopilotPanel({ itemId, recommendation, loading, chatMess
       {/* Input */}
       {recommendation && !loading && (
         <div className="border-t border-gray-800 p-3 bg-gray-950/40 shrink-0">
+          {/* Discoverable slash-command quick chips. Hidden once the user has
+              typed enough that the autocomplete menu opens. */}
+          {!input.startsWith('/') && (
+            <div className="flex items-center gap-1.5 flex-wrap mb-2">
+              <span className="text-[10px] uppercase tracking-wide text-gray-500 font-medium mr-0.5">Try</span>
+              {SLASH_COMMANDS.map((s) => (
+                <button
+                  key={s.cmd}
+                  onClick={() => { setInput(s.cmd + ' '); }}
+                  title={s.hint}
+                  className="text-[10px] font-mono bg-orange-900/30 hover:bg-orange-800/50 border border-orange-500/30 text-orange-300 px-1.5 py-0.5 rounded transition-colors"
+                >
+                  {s.cmd}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="flex items-end gap-2">
             <textarea
               value={input}
@@ -337,7 +362,7 @@ export default function CopilotPanel({ itemId, recommendation, loading, chatMess
               onKeyDown={handleKeyDown}
               placeholder="Ask a follow-up, or type / for commands…"
               rows={1}
-              className="flex-1 bg-gray-900 border border-gray-700 focus:border-orange-500/60 text-sm text-gray-100 placeholder-gray-600 rounded-md px-3 py-2 resize-none focus:outline-none"
+              className="flex-1 bg-gray-900 border border-gray-700 focus:border-orange-500/60 text-sm text-gray-100 placeholder-gray-500 rounded-md px-3 py-2 resize-none focus:outline-none"
               style={{ minHeight: '38px', maxHeight: '120px' }}
               disabled={chatThinking}
             />
@@ -346,15 +371,15 @@ export default function CopilotPanel({ itemId, recommendation, loading, chatMess
               disabled={!input.trim() || chatThinking}
               className={`text-xs px-3 py-2 rounded-md font-medium transition-colors ${
                 !input.trim() || chatThinking
-                  ? 'bg-gray-800 text-gray-600 cursor-not-allowed'
+                  ? 'bg-gray-800 text-gray-500 cursor-not-allowed'
                   : 'bg-orange-600 hover:bg-orange-500 text-white'
               }`}
             >
               Send
             </button>
           </div>
-          <div className="text-[10px] text-gray-600 mt-1.5 px-0.5">
-            Enter to send · Shift+Enter for newline · /removal-reason · /modmail · /sticky · /rule-cite
+          <div className="text-[10px] text-gray-500 mt-1.5 px-0.5">
+            Enter to send · Shift+Enter for newline
           </div>
         </div>
       )}

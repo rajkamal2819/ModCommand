@@ -20,7 +20,7 @@ const TABS: { id: Tab; label: string }[] = [
 ]
 
 export default function App() {
-  const { send, lastMessage } = useDevvitBridge()
+  const { send: rawSend, lastMessage } = useDevvitBridge()
   const [activeTab, setActiveTab] = useState<Tab>('triage')
 
   // Global state managed here, passed down to tabs
@@ -56,6 +56,29 @@ export default function App() {
 
   // Sentinel adaptive threshold suggestion
   const [thresholdSuggestion, setThresholdSuggestion] = useState<ThresholdSuggestion | null>(null)
+
+  // Optimistic-update wrapper around the raw postMessage send. For high-frequency
+  // mod actions (claim/release), apply the local state change immediately so the
+  // UI feels instant. The server still confirms via CLAIM_UPDATE/TRIAGE_STATE,
+  // which acts as a self-healing reconcile on the next response.
+  function send(msg: Parameters<typeof rawSend>[0]) {
+    if (msg.type === 'CLAIM') {
+      setTriageItems((prev) =>
+        prev.map((it) => it.id === msg.itemId
+          ? { ...it, claimedBy: currentMod, status: 'in_review' }
+          : it
+        )
+      )
+    } else if (msg.type === 'RELEASE') {
+      setTriageItems((prev) =>
+        prev.map((it) => it.id === msg.itemId
+          ? { ...it, claimedBy: null, status: 'unclaimed' }
+          : it
+        )
+      )
+    }
+    rawSend(msg)
+  }
 
   function openCopilot(itemId: string) {
     setCopilotItemId(itemId)
@@ -99,9 +122,14 @@ export default function App() {
     localStorage.setItem('mc-theme', isDark ? 'dark' : 'light')
   }, [isDark])
 
-  // Handle tab switch — load data lazily
+  // Reload the active tab's data on every switch (not just first visit).
+  // Keeps the dashboard feeling alive — switching back to Triage shows newly
+  // reported items without requiring an explicit Refresh click.
   useEffect(() => {
     switch (activeTab) {
+      case 'triage':
+        send({ type: 'TRIAGE_REFRESH' })
+        break
       case 'appeals':
         send({ type: 'APPEAL_LOAD' })
         break
@@ -236,6 +264,7 @@ export default function App() {
           <button
             onClick={() => setIsDark((d) => !d)}
             title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+            aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
             className={`
               relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full
               transition-colors duration-200 focus:outline-none
@@ -328,12 +357,16 @@ export default function App() {
         />
       </div>
 
-      {/* Toast */}
+      {/* Toast — slides left when a right-side panel is open so success/error
+          feedback isn't hidden behind it. */}
       {toast && (
         <div
-          className={`fixed bottom-4 right-4 px-4 py-2 rounded-lg text-sm font-medium shadow-lg z-50 ${
+          className={`fixed bottom-4 px-4 py-2 rounded-lg text-sm font-medium shadow-lg z-50 transition-all duration-200 ${
             toast.type === 'success' ? 'bg-green-700 text-white' : 'bg-red-700 text-white'
           }`}
+          style={{ right: copilotItemId || dossierUser ? '440px' : '16px' }}
+          role="status"
+          aria-live="polite"
         >
           {toast.msg}
         </div>

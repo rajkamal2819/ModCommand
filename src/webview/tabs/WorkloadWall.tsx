@@ -66,7 +66,7 @@ export default function WorkloadWall({ mods, period, queueContext, modActions, s
       <QueueContextCard ctx={queueContext} queueOpen={queueOpen} />
 
       {mods.length === 0 ? (
-        <div className="flex items-center justify-center flex-1 text-gray-600">
+        <div className="flex items-center justify-center flex-1 text-gray-500">
           <div className="text-center">
             <div className="text-3xl mb-2">📊</div>
             <div className="text-sm">No mod activity tracked yet</div>
@@ -116,10 +116,12 @@ export default function WorkloadWall({ mods, period, queueContext, modActions, s
                 <div key={mod.username} className="border-b border-gray-700/50 last:border-b-0">
                   <button
                     onClick={() => toggleMod(mod.username)}
+                    aria-expanded={isOpen}
+                    aria-label={isOpen ? `Collapse u/${mod.username} drill-down` : `Expand u/${mod.username} drill-down`}
                     className="w-full grid grid-cols-12 gap-2 items-center px-4 py-2.5 hover:bg-gray-900/40 transition-colors text-left"
                   >
                     <div className="col-span-3 flex items-center gap-1.5 min-w-0">
-                      <span className="text-xs text-gray-600 shrink-0">{isOpen ? '▾' : '▸'}</span>
+                      <span className="text-xs text-gray-500 shrink-0">{isOpen ? '▾' : '▸'}</span>
                       <span className="text-sm text-gray-200 truncate">u/{mod.username}</span>
                     </div>
                     <div className="col-span-1 text-right text-sm font-mono text-gray-300">
@@ -188,7 +190,7 @@ function StatCard({ label, value, sub }: { label: string; value: string; sub?: s
     <div className="bg-gray-800 rounded-xl p-3 text-center">
       <div className="text-2xl font-bold text-gray-100">{value}</div>
       <div className="text-xs text-gray-500 mt-1">{label}</div>
-      {sub && <div className="text-[10px] text-gray-600 mt-0.5">{sub}</div>}
+      {sub && <div className="text-[10px] text-gray-500 mt-0.5">{sub}</div>}
     </div>
   )
 }
@@ -197,7 +199,7 @@ function StatCard({ label, value, sub }: { label: string; value: string; sub?: s
 function ActionMixBar({ counts }: { counts: ModStats['counts'] }) {
   const total = counts.approval + counts.removal + counts.ban
   if (total === 0) {
-    return <div className="text-[10px] text-gray-600 italic">no actions yet</div>
+    return <div className="text-[10px] text-gray-500 italic">no actions yet</div>
   }
   const approvePct = (counts.approval / total) * 100
   const removePct = (counts.removal / total) * 100
@@ -284,7 +286,7 @@ function ModDrillDown({
               </span>
             )}
             {!a.reason && <span className="flex-1" />}
-            <span className="text-gray-600 whitespace-nowrap shrink-0">{formatRelative(a.ts)}</span>
+            <span className="text-gray-500 whitespace-nowrap shrink-0">{formatRelative(a.ts)}</span>
           </div>
         ))}
       </div>
