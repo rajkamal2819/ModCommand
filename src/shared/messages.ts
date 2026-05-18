@@ -145,6 +145,14 @@ export interface ThresholdSuggestion {
   aboveRemoved: number
 }
 
+export interface CopilotItemContext {
+  title: string
+  author: string
+  type: 'post' | 'comment'
+  url?: string
+  subName?: string
+}
+
 export interface CopilotRecommendation {
   action: 'approve' | 'remove' | 'ban' | 'escalate'
   confidence: 'high' | 'medium' | 'low'
@@ -155,6 +163,9 @@ export interface CopilotRecommendation {
   signalsUsed: string[]
   generatedAt: number
   applied?: boolean
+  // Surface in the panel header so the mod always knows which item they're
+  // discussing in the chat — especially useful after switching tabs.
+  itemContext?: CopilotItemContext
 }
 
 // Multi-turn Copilot chat: stored per-item, 24h TTL.

@@ -40,19 +40,44 @@ const SLASH_COMMANDS: { cmd: string; hint: string }[] = [
 
 const MIN_WIDTH = 340
 const MAX_WIDTH = 820
-const DEFAULT_WIDTH = 420
+const DEFAULT_WIDTH = 440
 const WIDTH_KEY = 'mc-copilot-width'
 
 export default function CopilotPanel({ itemId, recommendation, loading, chatMessages, chatThinking, send, onClose }: Props) {
   const [timedOut, setTimedOut] = useState(false)
   const [input, setInput] = useState('')
   const [showSlashMenu, setShowSlashMenu] = useState(false)
+  const [verdictCollapsed, setVerdictCollapsed] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState<number>(() => {
     const stored = parseInt(localStorage.getItem(WIDTH_KEY) ?? '', 10)
     return !isNaN(stored) && stored >= MIN_WIDTH && stored <= MAX_WIDTH ? stored : DEFAULT_WIDTH
   })
   const [resizing, setResizing] = useState(false)
+
+  useEffect(() => {
+    setTimedOut(false)
+    setInput('')
+    setShowSlashMenu(false)
+    setVerdictCollapsed(false)
+    if (itemId && !recommendation && !loading) {
+      send({ type: 'COPILOT_RECOMMEND', itemId, force: true })
+    }
+  }, [itemId]) // eslint-disable-line
+
+  // Resilience: silent retry, visible timeout fallback
+  useEffect(() => {
+    if (!loading || !itemId) return
+    const silentRetry = setTimeout(() => {
+      console.log('[CopilotPanel] no response in 1s — silently re-sending')
+      send({ type: 'COPILOT_RECOMMEND', itemId, force: true })
+    }, 1000)
+    const visibleTimeout = setTimeout(() => setTimedOut(true), 60000)
+    return () => {
+      clearTimeout(silentRetry)
+      clearTimeout(visibleTimeout)
+    }
+  }, [loading, itemId]) // eslint-disable-line
 
   // Mouse-driven resize from the left edge handle.
   useEffect(() => {
@@ -78,40 +103,13 @@ export default function CopilotPanel({ itemId, recommendation, loading, chatMess
     }
   }, [resizing, width])
 
-  // Persist width changes after resize ends (also covers programmatic changes).
   useEffect(() => {
     if (!resizing) localStorage.setItem(WIDTH_KEY, String(width))
   }, [width, resizing])
 
-  // Auto-request recommendation when an item is selected.
+  // Auto-scroll on new messages
   useEffect(() => {
-    setTimedOut(false)
-    setInput('')
-    setShowSlashMenu(false)
-    if (itemId && !recommendation && !loading) {
-      send({ type: 'COPILOT_RECOMMEND', itemId, force: true })
-    }
-  }, [itemId]) // eslint-disable-line
-
-  // Sub-second silent retry: Devvit bridge sometimes drops the first postMessage.
-  useEffect(() => {
-    if (!loading || !itemId) return
-    const silentRetry = setTimeout(() => {
-      console.log('[CopilotPanel] no response in 1s — silently re-sending')
-      send({ type: 'COPILOT_RECOMMEND', itemId, force: true })
-    }, 1000)
-    const visibleTimeout = setTimeout(() => setTimedOut(true), 60000)
-    return () => {
-      clearTimeout(silentRetry)
-      clearTimeout(visibleTimeout)
-    }
-  }, [loading, itemId]) // eslint-disable-line
-
-  // Auto-scroll chat to bottom on new messages.
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-    }
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
   }, [chatMessages.length, chatThinking])
 
   function retry() {
@@ -125,10 +123,7 @@ export default function CopilotPanel({ itemId, recommendation, loading, chatMess
   function apply() {
     if (!itemId || !recommendation) return
     if (recommendation.action === 'approve') {
-      const combo: ComboAction = {
-        approve: true, remove: false, ban: false,
-        removalReason: '', banReason: '',
-      }
+      const combo: ComboAction = { approve: true, remove: false, ban: false, removalReason: '', banReason: '' }
       send({ type: 'COMBO_ACTION', itemId, action: combo })
       send({ type: 'COPILOT_APPLY', itemId })
       onClose()
@@ -171,20 +166,13 @@ export default function CopilotPanel({ itemId, recommendation, loading, chatMess
     navigator.clipboard?.writeText(text).catch(() => { /* best-effort */ })
   }
 
-  const applyDisabled =
-    !recommendation ||
-    recommendation.confidence === 'low' ||
-    recommendation.action === 'escalate' ||
-    recommendation.applied
+  const applyDisabled = !recommendation || recommendation.confidence === 'low' || recommendation.action === 'escalate' || recommendation.applied
 
   const latestSuggestions = (() => {
     for (let i = chatMessages.length - 1; i >= 0; i--) {
       const m = chatMessages[i]
       if (m.role === 'assistant' && m.suggestions && m.suggestions.length > 0) return m.suggestions
     }
-    // Fallback during the brief window after the recommendation lands but
-    // before the chat-state message arrives. Keeps the suggestion area from
-    // looking empty during cold-start.
     if (recommendation) {
       if (recommendation.action === 'approve') return ['What would change your mind?', 'Any signals pointing the other way?', '/modmail']
       if (recommendation.action === 'escalate') return ['What would tip this to remove?', 'What would tip this to approve?', '/rule-cite']
@@ -193,49 +181,75 @@ export default function CopilotPanel({ itemId, recommendation, loading, chatMess
     return [] as string[]
   })()
 
+  // Show the "what to ask" hint when chat only has the seeded verdict (no user turns yet).
+  const noUserTurnsYet = chatMessages.filter((m) => m.role === 'user').length === 0
+  const hasChatStarted = chatMessages.length > 0
+
   return (
     <div
       className="absolute top-0 right-0 bottom-0 bg-gray-900 border-l border-gray-800 shadow-2xl flex flex-col z-20 animate-[slide-in_0.2s_ease-out]"
       style={{ width: `${width}px` }}
     >
-      {/* Resize handle — drag the left edge */}
+      {/* Resize handle — visible always so it's discoverable */}
       <div
         onMouseDown={(e) => { e.preventDefault(); setResizing(true) }}
         onDoubleClick={() => setWidth(DEFAULT_WIDTH)}
         title="Drag to resize · double-click to reset"
-        className={`absolute top-0 left-0 bottom-0 w-1.5 cursor-col-resize z-30 transition-colors ${
-          resizing ? 'bg-orange-500/60' : 'bg-transparent hover:bg-orange-500/30'
+        className={`absolute top-0 left-0 bottom-0 w-1 cursor-col-resize z-30 transition-colors ${
+          resizing ? 'bg-orange-500' : 'bg-gray-800 hover:bg-orange-500/60'
         }`}
+        aria-label="Resize panel"
       />
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800 bg-gray-950 shrink-0">
-        <div className="flex items-center gap-2">
+
+      {/* Header — unified style with Dossier */}
+      <div className="flex items-center justify-between h-12 px-4 border-b border-gray-800 bg-gray-950 shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
           <span className="text-orange-500 text-base">🤖</span>
           <span className="font-semibold text-gray-100 text-sm">Mod Copilot</span>
           {chatMessages.length > 1 && (
-            <span className="text-xs text-gray-500">· {chatMessages.length} turn{chatMessages.length === 1 ? '' : 's'}</span>
+            <span className="text-xs text-gray-500 shrink-0">· {chatMessages.length} turns</span>
           )}
         </div>
         <button
           onClick={onClose}
-          className="text-gray-500 hover:text-gray-200 text-lg leading-none"
-          aria-label="Close"
+          className="text-gray-500 hover:text-gray-200 text-lg leading-none px-2"
+          aria-label="Close Copilot panel"
         >
           ×
         </button>
       </div>
 
-      {/* Verdict header — sticky at top, always visible */}
+      {/* Item context strip — always visible so the mod knows what they're discussing */}
+      {recommendation?.itemContext && !loading && (
+        <a
+          href={recommendation.itemContext.url}
+          target="_blank"
+          rel="noreferrer"
+          className="flex items-start gap-2 px-4 py-2 border-b border-gray-800 bg-gray-900/60 hover:bg-gray-900 transition-colors shrink-0"
+          title={recommendation.itemContext.url ? 'Open on Reddit' : undefined}
+        >
+          <span className="text-xs mt-0.5">{recommendation.itemContext.type === 'post' ? '📝' : '💬'}</span>
+          <div className="min-w-0 flex-1">
+            <div className="text-xs text-gray-200 line-clamp-1 font-medium leading-tight">
+              {recommendation.itemContext.title}
+            </div>
+            <div className="text-[10px] text-gray-500 mt-0.5">
+              u/{recommendation.itemContext.author}
+              {recommendation.itemContext.subName ? ` · r/${recommendation.itemContext.subName}` : ''}
+            </div>
+          </div>
+        </a>
+      )}
+
+      {/* Verdict header — collapsible after the conversation gets going */}
       {recommendation && !loading && (
-        <div className="px-4 py-3 border-b border-gray-800 bg-gray-950/60 shrink-0 space-y-2">
+        <div className="px-4 py-2.5 border-b border-gray-800 bg-gray-950/60 shrink-0 space-y-2">
           <div className="flex items-center gap-2 flex-wrap">
-            <span
-              className={`text-xs font-bold uppercase tracking-wide px-2.5 py-1 rounded ${ACTION_STYLES[recommendation.action] ?? 'bg-gray-700 text-white'}`}
-            >
+            <span className={`text-xs font-bold uppercase tracking-wide px-2.5 py-1 rounded ${ACTION_STYLES[recommendation.action] ?? 'bg-gray-700 text-white'}`}>
               {ACTION_LABEL[recommendation.action] ?? recommendation.action}
             </span>
             <span className={`text-xs font-medium ${CONFIDENCE_STYLES[recommendation.confidence]}`}>
-              {recommendation.confidence} confidence
+              {recommendation.confidence}
             </span>
             {recommendation.applied && (
               <span className="text-xs bg-gray-700 text-gray-300 px-2 py-0.5 rounded">applied</span>
@@ -251,14 +265,21 @@ export default function CopilotPanel({ itemId, recommendation, loading, chatMess
             >
               {recommendation.applied ? 'Applied' : 'Apply'}
             </button>
+            {chatMessages.length > 2 && (
+              <button
+                onClick={() => setVerdictCollapsed((c) => !c)}
+                aria-label={verdictCollapsed ? 'Show signal details' : 'Hide signal details'}
+                className="text-xs text-gray-500 hover:text-gray-300 px-1"
+                title={verdictCollapsed ? 'Show signal details' : 'Hide signal details'}
+              >
+                {verdictCollapsed ? '▾' : '▴'}
+              </button>
+            )}
           </div>
-          {recommendation.signalsUsed.length > 0 && (
+          {!verdictCollapsed && recommendation.signalsUsed.length > 0 && (
             <div className="flex flex-wrap gap-1">
               {recommendation.signalsUsed.map((s, i) => (
-                <span
-                  key={i}
-                  className="text-[10px] bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded border border-gray-700"
-                >
+                <span key={i} className="text-[10px] bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded border border-gray-700">
                   {s}
                 </span>
               ))}
@@ -293,10 +314,11 @@ export default function CopilotPanel({ itemId, recommendation, loading, chatMess
             {chatMessages.map((m, i) => (
               <ChatBubble key={i} message={m} onCopy={copyToClipboard} />
             ))}
-            {chatThinking && (
-              <div className="flex items-center gap-2 text-xs text-gray-500 pl-1">
-                <div className="w-3 h-3 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
-                <span>Thinking…</span>
+            {chatThinking && <TypingBubble />}
+            {/* Empty-state hint: only when chat has just the seeded verdict */}
+            {hasChatStarted && noUserTurnsYet && !chatThinking && (
+              <div className="text-[11px] text-gray-500 italic px-1 pt-1 border-t border-gray-800/60">
+                Ask why · request a draft · try a slash command
               </div>
             )}
             {latestSuggestions.length > 0 && !chatThinking && (
@@ -316,7 +338,7 @@ export default function CopilotPanel({ itemId, recommendation, loading, chatMess
         )}
       </div>
 
-      {/* Slash command menu */}
+      {/* Slash command menu (typed `/`) */}
       {showSlashMenu && (
         <div className="border-t border-gray-800 bg-gray-950 shrink-0">
           <div className="px-3 py-2 text-[10px] uppercase tracking-wide text-gray-500 font-medium">
@@ -338,15 +360,13 @@ export default function CopilotPanel({ itemId, recommendation, loading, chatMess
       {/* Input */}
       {recommendation && !loading && (
         <div className="border-t border-gray-800 p-3 bg-gray-950/40 shrink-0">
-          {/* Discoverable slash-command quick chips. Hidden once the user has
-              typed enough that the autocomplete menu opens. */}
           {!input.startsWith('/') && (
             <div className="flex items-center gap-1.5 flex-wrap mb-2">
               <span className="text-[10px] uppercase tracking-wide text-gray-500 font-medium mr-0.5">Try</span>
               {SLASH_COMMANDS.map((s) => (
                 <button
                   key={s.cmd}
-                  onClick={() => { setInput(s.cmd + ' '); }}
+                  onClick={() => { setInput(s.cmd + ' ') }}
                   title={s.hint}
                   className="text-[10px] font-mono bg-orange-900/30 hover:bg-orange-800/50 border border-orange-500/30 text-orange-300 px-1.5 py-0.5 rounded transition-colors"
                 >
@@ -387,6 +407,21 @@ export default function CopilotPanel({ itemId, recommendation, loading, chatMess
   )
 }
 
+// ─── Sub-components ──────────────────────────────────────────────────────
+
+function TypingBubble() {
+  return (
+    <div className="flex items-start gap-2 mc-bubble-enter">
+      <div className="w-1 self-stretch bg-orange-500/60 rounded-full shrink-0" />
+      <div className="bg-gray-900 border border-gray-800 rounded-2xl rounded-bl-md px-3 py-2.5 inline-flex items-center">
+        <span className="mc-typing-dot" />
+        <span className="mc-typing-dot" />
+        <span className="mc-typing-dot" />
+      </div>
+    </div>
+  )
+}
+
 function ChatBubble({ message, onCopy }: { message: CopilotChatMessage; onCopy: (text: string) => void }) {
   const isUser = message.role === 'user'
   const isVerdict = message.kind === 'verdict'
@@ -394,47 +429,107 @@ function ChatBubble({ message, onCopy }: { message: CopilotChatMessage; onCopy: 
 
   if (isUser) {
     return (
-      <div className="flex justify-end">
-        <div className="max-w-[85%] bg-gray-800 text-gray-200 text-sm rounded-2xl rounded-br-md px-3 py-2 whitespace-pre-wrap">
+      <div className="flex justify-end mc-bubble-enter">
+        <div className="max-w-[85%] bg-gray-800 text-gray-100 text-sm rounded-2xl rounded-br-md px-3 py-2 whitespace-pre-wrap">
           {message.content}
         </div>
       </div>
     )
   }
 
+  // Assistant bubble: orange accent bar on the left makes the two-party feel obvious.
   return (
-    <div className="flex flex-col items-start">
-      <div
-        className={`max-w-[92%] text-sm rounded-2xl rounded-bl-md px-3 py-2 whitespace-pre-wrap ${
-          isVerdict
-            ? 'bg-gray-950 border border-gray-800 text-gray-200'
-            : isDraft
-            ? 'bg-orange-950/40 border border-orange-500/30 text-orange-100'
-            : 'bg-gray-900 border border-gray-800 text-gray-200'
-        }`}
-      >
-        {renderRichText(message.content)}
-        {isDraft && (
-          <div className="flex justify-end mt-2 pt-2 border-t border-orange-500/20">
-            <button
-              onClick={() => onCopy(message.content)}
-              className="text-[10px] text-orange-300 hover:text-orange-200 uppercase tracking-wide font-medium"
-            >
-              Copy
-            </button>
-          </div>
-        )}
+    <div className="flex flex-col items-start mc-bubble-enter">
+      {isVerdict && (
+        <div className="text-[9px] uppercase tracking-wider text-orange-400 font-bold mb-1 ml-3 flex items-center gap-1">
+          <span>🤖</span>
+          <span>Initial verdict</span>
+        </div>
+      )}
+      <div className="flex items-stretch gap-2 max-w-[85%]">
+        <div className={`w-1 rounded-full shrink-0 ${isDraft ? 'bg-orange-500' : isVerdict ? 'bg-orange-500/80' : 'bg-orange-500/50'}`} />
+        <div
+          className={`text-sm rounded-2xl rounded-bl-md px-3 py-2 whitespace-pre-wrap ${
+            isDraft
+              ? 'bg-orange-950/30 border border-orange-500/30 text-orange-100'
+              : isVerdict
+              ? 'bg-orange-950/15 border border-orange-500/20 text-gray-100'
+              : 'bg-gray-900 border border-gray-800 text-gray-200'
+          }`}
+        >
+          {renderMarkdown(message.content)}
+          {isDraft && (
+            <div className="flex justify-end mt-2 pt-2 border-t border-orange-500/20">
+              <button
+                onClick={() => onCopy(message.content)}
+                className="text-[10px] text-orange-300 hover:text-orange-200 uppercase tracking-wide font-medium"
+              >
+                Copy
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
 }
 
-// Render the simple **bold** markers Gemini sometimes uses; everything else as plain text.
-function renderRichText(text: string): React.ReactNode {
-  const parts = text.split(/(\*\*[^*]+\*\*)/g)
+// Lightweight markdown renderer for chat content. Handles:
+// - **bold**
+// - `inline code`
+// - bullet lists starting with "- " or "* "
+// No external deps; minimal regex.
+function renderMarkdown(text: string): React.ReactNode {
+  const lines = text.split('\n')
+  // Group consecutive bullet lines into a single <ul>; pass everything else
+  // through as paragraphs.
+  const blocks: React.ReactNode[] = []
+  let bulletBuffer: string[] = []
+
+  function flushBullets() {
+    if (bulletBuffer.length === 0) return
+    blocks.push(
+      <ul key={`ul-${blocks.length}`} className="list-disc list-inside space-y-0.5 my-1">
+        {bulletBuffer.map((b, i) => (
+          <li key={i} className="leading-snug">{renderInline(b)}</li>
+        ))}
+      </ul>
+    )
+    bulletBuffer = []
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    const m = line.match(/^\s*[-*]\s+(.+)$/)
+    if (m) {
+      bulletBuffer.push(m[1])
+    } else {
+      flushBullets()
+      // Preserve blank lines as a tiny vertical gap.
+      if (line.trim() === '') {
+        blocks.push(<div key={`gap-${i}`} className="h-1" />)
+      } else {
+        blocks.push(<div key={`p-${i}`}>{renderInline(line)}</div>)
+      }
+    }
+  }
+  flushBullets()
+  return blocks
+}
+
+function renderInline(text: string): React.ReactNode {
+  // Tokenize on **bold** and `code`; everything else is plain text.
+  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g)
   return parts.map((p, i) => {
     if (p.startsWith('**') && p.endsWith('**')) {
       return <strong key={i} className="font-semibold text-gray-100">{p.slice(2, -2)}</strong>
+    }
+    if (p.startsWith('`') && p.endsWith('`')) {
+      return (
+        <code key={i} className="font-mono text-[12px] bg-gray-800 text-orange-300 px-1 py-0.5 rounded">
+          {p.slice(1, -1)}
+        </code>
+      )
     }
     return <span key={i}>{p}</span>
   })

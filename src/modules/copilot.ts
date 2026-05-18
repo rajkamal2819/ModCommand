@@ -2,7 +2,7 @@ import type { Context } from '@devvit/public-api'
 import type { CopilotSignals } from '../ai/gemini.js'
 import { copilotRecommend, copilotChat, rewriteSlashCommand } from '../ai/gemini.js'
 import { Keys } from '../redis/keys.js'
-import type { CopilotRecommendation, CopilotChatMessage } from '../shared/messages.js'
+import type { CopilotRecommendation, CopilotChatMessage, CopilotItemContext } from '../shared/messages.js'
 import { getModeratorSet } from '../auth/isModerator.js'
 import { withTimeout as withTimeoutShared } from './_util.js'
 
@@ -85,6 +85,15 @@ export async function handleCopilotRecommend(
   const body: string = isComment ? (item?.body ?? '') : (item?.selftext ?? '')
   const authorName: string = item?.authorName ?? editRecord['author'] ?? 'unknown'
   const subName: string = subreddit?.name ?? ''
+  // Item context surfaced in the Copilot panel header so the mod always
+  // knows which post/comment they're discussing.
+  const itemContext: CopilotItemContext = {
+    title: isComment ? (body.slice(0, 80) || '(comment)') : (title || '(no title)'),
+    author: authorName,
+    type: isComment ? 'comment' : 'post',
+    subName,
+    url: item?.permalink ? `https://www.reddit.com${item.permalink}` : undefined,
+  }
 
   // ─── Phase 2: fan out all remaining lookups in parallel with timeouts ────
   // Each call has its own deadline; phase 2 will never block longer than the longest
@@ -154,6 +163,7 @@ export async function handleCopilotRecommend(
       draftMessage: '',
       signalsUsed: ['author=moderator'],
       generatedAt: Date.now(),
+      itemContext,
     }
     await redis.set(Keys.copilot(itemId), JSON.stringify(rec), {
       expiration: new Date(Date.now() + 86400 * 1000),
@@ -243,6 +253,7 @@ export async function handleCopilotRecommend(
       draftMessage: '',
       signalsUsed: ['no-aigc', 'no-reports', 'clean-author'],
       generatedAt: Date.now(),
+      itemContext,
     }
     await redis.set(Keys.copilot(itemId), JSON.stringify(rec), {
       expiration: new Date(Date.now() + 86400 * 1000),
@@ -261,6 +272,7 @@ export async function handleCopilotRecommend(
       ...result,
       signalsUsed: buildSignalsUsed(signals),
       generatedAt: Date.now(),
+      itemContext,
     }
     await redis.set(Keys.copilot(itemId), JSON.stringify(rec), {
       expiration: new Date(Date.now() + 86400 * 1000),
