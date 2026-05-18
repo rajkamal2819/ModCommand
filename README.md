@@ -4,7 +4,7 @@ A unified moderation dashboard for Reddit, built with [Devvit](https://developer
 
 Built for the [Reddit Mod Tools and Migrated Apps Hackathon](https://www.reddit.com/r/devvit/).
 
-> **The dashboard is fully usable without a Gemini API key.** Triage, claim locks, appeal intake, edit-evasion tracking, workload metrics, and audit logging all work out of the box. Adding a key unlocks the *smart* layer: AIGC scoring, behavioral summaries, the Mod Copilot chat, and the adaptive threshold suggestion.
+> **Zero setup.** Install on your sub and everything works — AI features included. No API keys to configure, no external accounts to create. The dashboard ships with shared AI access (Google Gemini 2.5 Flash) so moderators can start using AIGC scoring, the Mod Copilot chat, and behavioral summaries immediately.
 
 ---
 
@@ -84,13 +84,13 @@ Click the sun/moon switch in the header to flip themes. Preference persists in `
 
 ### Prerequisites
 - A Reddit account with moderator access to a subreddit
-- (Optional) A [Google AI Studio](https://aistudio.google.com/) API key — only needed for AI features
 
 ### For moderators installing the published app
 1. Go to https://developers.reddit.com/apps/modcommand
 2. Click **Add to community** → choose your subreddit
-3. (Optional) Open the app settings and paste your Gemini API key to enable AI features
-4. On your sub, open the **moderator menu** (top-right shield icon on old Reddit, three-dot menu on new) → **Open ModCommand** → click **Open Dashboard**
+3. On your sub, open the **moderator menu** (top-right shield icon on old Reddit, three-dot menu on new) → **Open ModCommand** → click **Open Dashboard**
+
+That's it — AI features work out of the box.
 
 ### For developers running locally
 ```bash
@@ -108,18 +108,19 @@ In your subreddit's app settings (Mod Tools → Apps → ModCommand):
 
 | Setting | Description | Default |
 |---|---|---|
-| `geminiApiKey` | Google AI Studio API key (optional — enables AI features) | — |
-| `aigcThreshold` | AIGC detection threshold (0–100) | 70 |
+| `aigcThreshold` | AIGC detection threshold (0–100) — used by AI Sentinel | 70 |
 | `appealFormEnabled` | Auto-reply to modmail with appeal form | true |
 | `digestDay` | Day of week for weekly digest (0=Sun, 1=Mon, …) | 1 |
+
+The AIGC threshold can also be adjusted live from the AI Sentinel tab via the slider — that value is persisted in Redis and takes priority over this setting.
 
 ---
 
 ## Privacy & data handling
 
 - **No personal profiling.** ModCommand stores only mod action behavior, item metadata, and per-user activity *within the installed sub*. Account ages and karma are read from public Reddit profiles when needed.
-- **External call:** Gemini API calls go to `generativelanguage.googleapis.com`. The content of posts/comments being analyzed is sent. Cached for 24h per content hash to minimize traffic.
-- **Per-install API keys.** Each subreddit's Gemini key is stored as a Devvit secret, isolated from other installations.
+- **External call:** AI features route through Google Gemini at `generativelanguage.googleapis.com`. The content of posts/comments being analyzed (text only) is sent. Responses are cached for 24h per content hash to minimize traffic and respect rate limits.
+- **Shared AI access.** During the public beta the app uses a single shared Gemini key managed by the developer — moderators don't need to bring their own key. Per-sub API keys are on the roadmap for the general-availability release.
 - **All AI is advisory.** Every recommendation requires a human mod to click. There is no auto-moderation.
 - **Data retention.** Per-sub audit log is capped at 500 entries. Per-item caches expire after 24h. Dossier panel cache expires after 60s.
 
