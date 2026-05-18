@@ -284,12 +284,20 @@ Devvit.addCustomPostType({
         // The dashboard's render-time mod check already gated entry to this UI,
         // so if the runtime mod check is slow/hangs we fail OPEN (assume mod) rather
         // than blocking legitimate messages behind a cold getModerators() fetch.
+        // Defensive setTimeout: Devvit's worker runtime occasionally lacks
+        // setTimeout in deferred contexts; wrap the timeout install in
+        // try/catch so it degrades to "no timeout" rather than throwing an
+        // unhandled rejection that pollutes the event handler.
         const tGate = Date.now()
         const modCheck = await Promise.race([
           isCurrentUserModerator(context).then((r) => ({ ok: r, timedOut: false })),
-          new Promise<{ ok: boolean; timedOut: boolean }>((resolve) =>
-            setTimeout(() => resolve({ ok: true, timedOut: true }), 5000)
-          ),
+          new Promise<{ ok: boolean; timedOut: boolean }>((resolve) => {
+            try {
+              setTimeout(() => resolve({ ok: true, timedOut: true }), 5000)
+            } catch {
+              // setTimeout unavailable — let the real modCheck win the race.
+            }
+          }),
         ])
         console.log(`[onMessage] mod-gate done in ${Date.now() - tGate}ms (ok=${modCheck.ok}, timedOut=${modCheck.timedOut})`)
         if (!modCheck.ok) {
@@ -386,9 +394,11 @@ Devvit.addCustomPostType({
               console.log(`[onMessage] COPILOT response ready, sending; total=${Date.now() - tMsg}ms`)
               send({ type: 'COPILOT_STATE', itemId: message.itemId, recommendation })
               // Fire-and-forget: seed chat with the verdict AFTER returning so
-              // the verdict response paints immediately. Inlining this turned
-              // out to hold the Devvit postMessage bridge open long enough that
-              // COPILOT_STATE was being dropped in some flows.
+              // the verdict response paints immediately. The trailing .catch
+              // is a safety net for any unhandled rejection (e.g. setTimeout
+              // missing from a deferred Devvit eval context) — without it,
+              // the rejection surfaces as an "Error in event handler" in the
+              // playtest logs even when the user-facing flow already succeeded.
               ;(async () => {
                 try {
                   await seedChatWithVerdict(message.itemId, recommendation, context)
@@ -397,7 +407,9 @@ Devvit.addCustomPostType({
                 } catch (err) {
                   console.error('[onMessage] seedChatWithVerdict failed:', err instanceof Error ? err.message : err)
                 }
-              })()
+              })().catch((err) => {
+                console.warn('[onMessage] chat-seed IIFE rejected:', err instanceof Error ? err.message : err)
+              })
               break
             }
             case 'COPILOT_APPLY': {
@@ -430,7 +442,8 @@ Devvit.addCustomPostType({
               const data = await handleDossierLoad(message.username, context)
               send({ type: 'DOSSIER_STATE', username: message.username, data })
               // Fire-and-forget AI summary so the panel paints data first.
-              // Don't await — the summary message is delivered when ready.
+              // Trailing .catch swallows any unhandled rejection (Devvit
+              // runtime context quirks) without polluting the playtest logs.
               ;(async () => {
                 try {
                   const summary = await handleDossierSummary(message.username, data, context)
@@ -440,7 +453,9 @@ Devvit.addCustomPostType({
                 } catch (err) {
                   console.error('[onMessage] dossier summary failed:', err instanceof Error ? err.message : err)
                 }
-              })()
+              })().catch((err) => {
+                console.warn('[onMessage] dossier-summary IIFE rejected:', err instanceof Error ? err.message : err)
+              })
               break
             }
             case 'DOSSIER_PIN_TOGGLE': {

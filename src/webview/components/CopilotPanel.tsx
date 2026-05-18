@@ -116,6 +116,25 @@ export default function CopilotPanel({ itemId, recommendation, loading, chatMess
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
   }, [chatMessages.length, chatThinking])
 
+  // Clear the optimistic pending bubble once the server echoes it back in the
+  // chat history. Matching by content + recency is loose but works since the
+  // user can't double-send (button disabled while pending).
+  useEffect(() => {
+    if (!pendingSend) return
+    const echoed = chatMessages.some(
+      (m) => m.role === 'user' && m.content === pendingSend.content && m.ts >= pendingSend.ts - 1000
+    )
+    if (echoed) setPendingSend(null)
+  }, [chatMessages, pendingSend])
+
+  // Safety net: clear pendingSend if it sits for >30s with no echo — prevents
+  // the input getting stuck disabled if a message somehow drops.
+  useEffect(() => {
+    if (!pendingSend) return
+    const t = setTimeout(() => setPendingSend(null), 30000)
+    return () => clearTimeout(t)
+  }, [pendingSend])
+
   function retry() {
     if (!itemId) return
     setTimedOut(false)
@@ -155,25 +174,6 @@ export default function CopilotPanel({ itemId, recommendation, loading, chatMess
     setInput('')
     setShowSlashMenu(false)
   }
-
-  // Clear the optimistic pending bubble once the server echoes it back in the
-  // chat history. Matching by content + recency is loose but works since the
-  // user can't double-send (button disabled while pending).
-  useEffect(() => {
-    if (!pendingSend) return
-    const echoed = chatMessages.some(
-      (m) => m.role === 'user' && m.content === pendingSend.content && m.ts >= pendingSend.ts - 1000
-    )
-    if (echoed) setPendingSend(null)
-  }, [chatMessages, pendingSend])
-
-  // Safety net: clear pendingSend if it sits for >30s with no echo — prevents
-  // the input getting stuck disabled if a message somehow drops.
-  useEffect(() => {
-    if (!pendingSend) return
-    const t = setTimeout(() => setPendingSend(null), 30000)
-    return () => clearTimeout(t)
-  }, [pendingSend])
 
   function handleInputChange(value: string) {
     setInput(value)
@@ -522,7 +522,8 @@ function ChatBubble({ message, onCopy }: { message: CopilotChatMessage; onCopy: 
 // - `inline code`
 // - bullet lists starting with "- " or "* "
 // No external deps; minimal regex.
-function renderMarkdown(text: string): React.ReactNode {
+function renderMarkdown(text: string | null | undefined): React.ReactNode {
+  if (typeof text !== 'string' || text.length === 0) return null
   const lines = text.split('\n')
   // Group consecutive bullet lines into a single <ul>; pass everything else
   // through as paragraphs.
