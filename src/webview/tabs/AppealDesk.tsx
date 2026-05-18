@@ -5,11 +5,12 @@ import AppealCard from '../components/AppealCard'
 interface Props {
   appeals: Appeal[]
   send: (msg: ClientMessage) => void
+  onDossier?: (username: string) => void
 }
 
 type Filter = 'pending' | 'accepted' | 'denied'
 
-export default function AppealDesk({ appeals, send }: Props) {
+export default function AppealDesk({ appeals, send, onDossier }: Props) {
   const [filter, setFilter] = useState<Filter>('pending')
   const [selected, setSelected] = useState<string | null>(null)
 
@@ -84,7 +85,7 @@ export default function AppealDesk({ appeals, send }: Props) {
       {/* Right panel — detail */}
       <div className="flex-1 overflow-y-auto p-4">
         {selectedAppeal ? (
-          <AppealCard appeal={selectedAppeal} send={send} />
+          <AppealCard appeal={selectedAppeal} send={send} onDossier={onDossier} />
         ) : (
           <div className="flex items-center justify-center h-full text-gray-600">
             <div className="text-center">

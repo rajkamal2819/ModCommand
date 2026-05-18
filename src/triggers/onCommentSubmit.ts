@@ -21,6 +21,17 @@ export const onCommentSubmit: CommentSubmitDefinition = {
       createdAt: Date.now().toString(),
     })
 
+    // Reverse index per user for Copilot signal aggregation
+    const subName = event.subreddit?.name ?? (await context.reddit.getCurrentSubreddit().catch(() => null))?.name
+    if (subName && comment.author) {
+      try {
+        const userKey = Keys.userItems(subName, comment.author)
+        await redis.zAdd(userKey, { score: Date.now(), member: comment.id })
+        const cnt = await redis.zCard(userKey)
+        if (cnt > 50) await redis.zRemRangeByRank(userKey, 0, cnt - 51)
+      } catch {}
+    }
+
     try {
       const apiKey = (await context.settings.get('geminiApiKey')) as string | undefined
       const threshold = ((await context.settings.get('aigcThreshold')) as number | undefined) ?? 70

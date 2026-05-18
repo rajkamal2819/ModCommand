@@ -1,6 +1,9 @@
 import type { Context } from '@devvit/public-api'
 import type { EditWatchEntry, DiffChunk } from '../shared/messages.js'
 import { Keys } from '../redis/keys.js'
+import { recordAudit } from './audit.js'
+import { recordSentinelSample } from './adaptiveThreshold.js'
+import { invalidateDossierCache } from './dossier.js'
 
 export async function handleEditWatchLoad(context: Context): Promise<EditWatchEntry[]> {
   const redis = context.redis
@@ -104,5 +107,37 @@ export async function handleEditWatchAction(
         } catch {}
       }
     }
+  }
+
+  // Audit + sample collection + dossier cache invalidate
+  const record = await redis.hGetAll(Keys.editRecord(itemId))
+  const authorName = record?.['author'] ?? 'unknown'
+  const modName = (await context.reddit.getCurrentUsername()) ?? 'unknown'
+  const auditAction =
+    action === 'restore_remove' ? 'edit_remove' :
+    action === 'innocent' ? 'edit_innocent' :
+    'edit_ignore'
+  await recordAudit(
+    subreddit.name,
+    { action: auditAction, mod: modName, itemId, targetUser: authorName },
+    context
+  )
+  // Treat a "restore_remove" as a remove signal for adaptive threshold;
+  // "innocent" as approve. "ignore" is ambiguous — skip.
+  const scoreStr = record?.['aigcScore']
+  if (scoreStr && action !== 'ignore') {
+    const aigc = parseInt(scoreStr, 10)
+    if (!Number.isNaN(aigc)) {
+      await recordSentinelSample(
+        subreddit.name,
+        itemId,
+        aigc,
+        action === 'restore_remove' ? 'removed' : 'approved',
+        context
+      )
+    }
+  }
+  if (authorName !== 'unknown') {
+    await invalidateDossierCache(subreddit.name, authorName, context)
   }
 }

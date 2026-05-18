@@ -4,6 +4,7 @@ import type { ClientMessage } from '../../shared/messages'
 interface Props {
   appeal: Appeal
   send: (msg: ClientMessage) => void
+  onDossier?: (username: string) => void
 }
 
 const RISK_COLORS = {
@@ -12,7 +13,7 @@ const RISK_COLORS = {
   high: 'bg-red-900 text-red-300',
 }
 
-export default function AppealCard({ appeal, send }: Props) {
+export default function AppealCard({ appeal, send, onDossier }: Props) {
   const accountAgeDisplay =
     appeal.accountAge < 30
       ? `${appeal.accountAge}d old`
@@ -29,7 +30,17 @@ export default function AppealCard({ appeal, send }: Props) {
       {/* User snapshot */}
       <div className="flex items-center gap-4 bg-gray-800 rounded-lg p-3">
         <div>
-          <div className="font-medium text-gray-100">u/{appeal.username}</div>
+          {onDossier ? (
+            <button
+              onClick={() => onDossier(appeal.username)}
+              className="font-medium text-gray-100 hover:text-orange-400 transition-colors"
+              title="Open user dossier"
+            >
+              u/{appeal.username}
+            </button>
+          ) : (
+            <div className="font-medium text-gray-100">u/{appeal.username}</div>
+          )}
           <div className="text-xs text-gray-400 mt-0.5">
             {accountAgeDisplay} · {appeal.karma.toLocaleString()} karma
           </div>

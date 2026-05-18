@@ -5,6 +5,8 @@ import DiffViewer from '../components/DiffViewer'
 interface Props {
   entries: EditWatchEntry[]
   send: (msg: ClientMessage) => void
+  onCopilot?: (id: string) => void
+  onDossier?: (username: string) => void
 }
 
 const SCORE_STYLES = {
@@ -13,7 +15,7 @@ const SCORE_STYLES = {
   LOW: 'bg-yellow-500 text-gray-900',
 }
 
-export default function EditWatch({ entries, send }: Props) {
+export default function EditWatch({ entries, send, onCopilot, onDossier }: Props) {
   const [expanded, setExpanded] = useState<string | null>(null)
 
   const flagged = entries.filter((e) => e.status === 'flagged')
@@ -63,7 +65,17 @@ export default function EditWatch({ entries, send }: Props) {
                 Removed
               </span>
             )}
-            <span className="text-xs text-gray-500">u/{entry.author}</span>
+            {onDossier ? (
+              <button
+                onClick={(e) => { e.stopPropagation(); onDossier(entry.author) }}
+                className="text-xs text-gray-500 hover:text-orange-400 transition-colors"
+                title="Open user dossier"
+              >
+                u/{entry.author}
+              </button>
+            ) : (
+              <span className="text-xs text-gray-500">u/{entry.author}</span>
+            )}
             <span className="text-xs text-gray-600">{entry.type}</span>
             {entry.status !== 'flagged' && (
               <span className="text-xs bg-gray-700 text-gray-400 px-1.5 py-0.5 rounded">
@@ -88,25 +100,37 @@ export default function EditWatch({ entries, send }: Props) {
             />
 
             {entry.status === 'flagged' && (
-              <div className="flex gap-2">
-                <button
-                  onClick={() => action(entry.itemId, 'restore_remove')}
-                  className="flex-1 bg-red-700 hover:bg-red-600 text-white text-xs py-2 rounded-lg font-medium transition-colors"
-                >
-                  Remove Post
-                </button>
-                <button
-                  onClick={() => action(entry.itemId, 'innocent')}
-                  className="flex-1 bg-green-800 hover:bg-green-700 text-white text-xs py-2 rounded-lg transition-colors"
-                >
-                  Mark Innocent
-                </button>
-                <button
-                  onClick={() => action(entry.itemId, 'ignore')}
-                  className="flex-1 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs py-2 rounded-lg transition-colors"
-                >
-                  Ignore
-                </button>
+              <div className="space-y-2">
+                {onCopilot && (
+                  <button
+                    onClick={() => onCopilot(entry.itemId)}
+                    title="Get AI recommendation from Mod Copilot"
+                    className="w-full bg-orange-900/60 hover:bg-orange-800/60 border border-orange-500/40 text-orange-300 text-xs py-2 rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
+                  >
+                    <span className="text-sm">🤖</span>
+                    <span>Ask Mod Copilot</span>
+                  </button>
+                )}
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => action(entry.itemId, 'restore_remove')}
+                    className="flex-1 bg-red-700 hover:bg-red-600 text-white text-xs py-2 rounded-lg font-medium transition-colors"
+                  >
+                    Remove Post
+                  </button>
+                  <button
+                    onClick={() => action(entry.itemId, 'innocent')}
+                    className="flex-1 bg-green-800 hover:bg-green-700 text-white text-xs py-2 rounded-lg transition-colors"
+                  >
+                    Mark Innocent
+                  </button>
+                  <button
+                    onClick={() => action(entry.itemId, 'ignore')}
+                    className="flex-1 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs py-2 rounded-lg transition-colors"
+                  >
+                    Ignore
+                  </button>
+                </div>
               </div>
             )}
           </div>

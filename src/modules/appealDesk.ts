@@ -2,6 +2,8 @@ import type { Context } from '@devvit/public-api'
 import type { Appeal } from '../shared/messages.js'
 import { Keys } from '../redis/keys.js'
 import { summarizeAppeal } from '../ai/gemini.js'
+import { recordAudit, type AuditAction } from './audit.js'
+import { invalidateDossierCache } from './dossier.js'
 
 export async function handleAppealLoad(context: Context): Promise<Appeal[]> {
   const redis = context.redis
@@ -126,6 +128,19 @@ export async function handleAppealResolve(
       })
     } catch {}
   }
+
+  // Audit + dossier cache invalidate
+  const auditAction: AuditAction =
+    action === 'unban' ? 'appeal_accept' :
+    action === 'temp_ban' ? 'temp_ban' :
+    'appeal_deny'
+  const modName = (await context.reddit.getCurrentUsername()) ?? 'unknown'
+  await recordAudit(
+    subreddit.name,
+    { action: auditAction, mod: modName, targetUser: username },
+    context
+  )
+  await invalidateDossierCache(subreddit.name, username, context)
 
   // Remove from queue
   await redis.zRem(Keys.appealQueue(subreddit.name), [userId])

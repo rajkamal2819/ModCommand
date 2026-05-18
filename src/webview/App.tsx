@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react'
 import { useDevvitBridge } from './hooks/useDevvitBridge'
-import type { ServerMessage, ModQueueItem, Appeal, SentinelEntry, EditWatchEntry, ModStats } from '../shared/messages'
+import type { ServerMessage, ModQueueItem, Appeal, SentinelEntry, EditWatchEntry, ModStats, CopilotRecommendation, CopilotChatMessage, DossierState, DossierSummary, ThresholdSuggestion } from '../shared/messages'
 import TriageBoard from './tabs/TriageBoard'
 import AppealDesk from './tabs/AppealDesk'
 import AISentinel from './tabs/AISentinel'
 import EditWatch from './tabs/EditWatch'
 import WorkloadWall from './tabs/WorkloadWall'
+import CopilotPanel from './components/CopilotPanel'
+import DossierPanel from './components/DossierPanel'
 
 type Tab = 'triage' | 'appeals' | 'sentinel' | 'editwatch' | 'workload'
 
@@ -36,6 +38,59 @@ export default function App() {
   const [isDark, setIsDark] = useState(
     () => localStorage.getItem('mc-theme') !== 'light'
   )
+
+  // Copilot panel state — global, opened by any tab
+  const [copilotItemId, setCopilotItemId] = useState<string | null>(null)
+  const [copilotRec, setCopilotRec] = useState<CopilotRecommendation | null>(null)
+  const [copilotLoading, setCopilotLoading] = useState(false)
+  const [copilotChat, setCopilotChat] = useState<CopilotChatMessage[]>([])
+  const [copilotChatThinking, setCopilotChatThinking] = useState(false)
+
+  // Dossier panel state — global, opened by clicking any u/X
+  const [dossierUser, setDossierUser] = useState<string | null>(null)
+  const [dossierData, setDossierData] = useState<DossierState | null>(null)
+  const [dossierSummary, setDossierSummary] = useState<DossierSummary | null>(null)
+  const [dossierLoading, setDossierLoading] = useState(false)
+
+  // Sentinel adaptive threshold suggestion
+  const [thresholdSuggestion, setThresholdSuggestion] = useState<ThresholdSuggestion | null>(null)
+
+  function openCopilot(itemId: string) {
+    setCopilotItemId(itemId)
+    setCopilotRec(null)
+    setCopilotLoading(true)
+    setCopilotChat([])
+    setCopilotChatThinking(false)
+    // Try to restore any existing chat while the fresh recommendation loads.
+    send({ type: 'COPILOT_CHAT_LOAD', itemId })
+  }
+  function closeCopilot() {
+    setCopilotItemId(null)
+    setCopilotRec(null)
+    setCopilotLoading(false)
+    setCopilotChat([])
+    setCopilotChatThinking(false)
+  }
+  function openDossier(username: string) {
+    if (!username || username === 'unknown' || username === '[deleted]') return
+    // If panel is already showing this user, close it (toggle behavior)
+    if (dossierUser === username) {
+      closeDossier()
+      return
+    }
+    setDossierUser(username)
+    setDossierData(null)
+    setDossierSummary(null)
+    setDossierLoading(true)
+    // Also close copilot if open — only one panel at a time
+    closeCopilot()
+  }
+  function closeDossier() {
+    setDossierUser(null)
+    setDossierData(null)
+    setDossierSummary(null)
+    setDossierLoading(false)
+  }
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', isDark)
@@ -87,6 +142,7 @@ export default function App() {
       case 'SENTINEL_STATE':
         setSentinelEntries(msg.entries)
         setSentinelThreshold(msg.threshold)
+        setThresholdSuggestion(msg.suggestion ?? null)
         setLoading(false)
         break
       case 'EDITWATCH_STATE':
@@ -104,10 +160,37 @@ export default function App() {
       case 'ACCESS_DENIED':
         setAccessDenied(true)
         setLoading(false)
+        setCopilotLoading(false)
+        setDossierLoading(false)
+        break
+      case 'COPILOT_STATE':
+        if (msg.itemId === copilotItemId) {
+          setCopilotRec(msg.recommendation)
+          setCopilotLoading(false)
+        }
+        break
+      case 'COPILOT_CHAT_STATE':
+        if (msg.itemId === copilotItemId) {
+          setCopilotChat(msg.messages)
+          setCopilotChatThinking(!!msg.thinking)
+        }
+        break
+      case 'DOSSIER_STATE':
+        if (msg.username === dossierUser) {
+          setDossierData(msg.data)
+          setDossierLoading(false)
+        }
+        break
+      case 'DOSSIER_SUMMARY':
+        if (msg.username === dossierUser) {
+          setDossierSummary(msg.summary)
+        }
         break
       case 'ERROR':
         showToast(msg.message, 'error')
         setLoading(false)
+        setCopilotLoading(false)
+        setDossierLoading(false)
         break
     }
   }, [lastMessage])
@@ -196,20 +279,38 @@ export default function App() {
         )}
 
         {activeTab === 'triage' && (
-          <TriageBoard items={triageItems} currentMod={currentMod} send={send} />
+          <TriageBoard items={triageItems} currentMod={currentMod} send={send} onCopilot={openCopilot} onDossier={openDossier} />
         )}
         {activeTab === 'appeals' && (
-          <AppealDesk appeals={appeals} send={send} />
+          <AppealDesk appeals={appeals} send={send} onDossier={openDossier} />
         )}
         {activeTab === 'sentinel' && (
-          <AISentinel entries={sentinelEntries} threshold={sentinelThreshold} send={send} />
+          <AISentinel entries={sentinelEntries} threshold={sentinelThreshold} send={send} onCopilot={openCopilot} onDossier={openDossier} suggestion={thresholdSuggestion} />
         )}
         {activeTab === 'editwatch' && (
-          <EditWatch entries={editEntries} send={send} />
+          <EditWatch entries={editEntries} send={send} onCopilot={openCopilot} onDossier={openDossier} />
         )}
         {activeTab === 'workload' && (
           <WorkloadWall mods={modStats} period={workloadPeriod} send={send} />
         )}
+
+        <CopilotPanel
+          itemId={copilotItemId}
+          recommendation={copilotRec}
+          loading={copilotLoading}
+          chatMessages={copilotChat}
+          chatThinking={copilotChatThinking}
+          send={send}
+          onClose={closeCopilot}
+        />
+        <DossierPanel
+          username={dossierUser}
+          data={dossierData}
+          summary={dossierSummary}
+          loading={dossierLoading}
+          send={send}
+          onClose={closeDossier}
+        />
       </div>
 
       {/* Toast */}

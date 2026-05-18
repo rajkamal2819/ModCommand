@@ -1,10 +1,13 @@
 import { useState } from 'react'
-import type { SentinelEntry, ClientMessage } from '../../shared/messages'
+import type { SentinelEntry, ClientMessage, ThresholdSuggestion } from '../../shared/messages'
 
 interface Props {
   entries: SentinelEntry[]
   threshold: number
   send: (msg: ClientMessage) => void
+  onCopilot?: (id: string) => void
+  onDossier?: (username: string) => void
+  suggestion?: ThresholdSuggestion | null
 }
 
 function ScoreBadge({ score }: { score: number }) {
@@ -21,7 +24,7 @@ function ScoreBadge({ score }: { score: number }) {
   )
 }
 
-export default function AISentinel({ entries, threshold, send }: Props) {
+export default function AISentinel({ entries, threshold, send, onCopilot, onDossier, suggestion }: Props) {
   const [localThreshold, setLocalThreshold] = useState(threshold)
   const [expanded, setExpanded] = useState<string | null>(null)
 
@@ -32,6 +35,18 @@ export default function AISentinel({ entries, threshold, send }: Props) {
 
   // Filter visible entries by current threshold (live, no server roundtrip needed)
   const visibleEntries = entries.filter((e) => e.score >= localThreshold)
+
+  // Show the adaptive-threshold banner only when:
+  // - we have a suggestion (i.e. ≥50 mod decisions in the bucket history)
+  // - it's meaningfully different from the current threshold (±2 deadband)
+  const showSuggestion =
+    suggestion != null && Math.abs(suggestion.suggested - localThreshold) > 2
+
+  function applySuggestion() {
+    if (!suggestion) return
+    setLocalThreshold(suggestion.suggested)
+    applyThreshold(suggestion.suggested)
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -55,6 +70,26 @@ export default function AISentinel({ entries, threshold, send }: Props) {
           {visibleEntries.length} of {entries.length} flagged
         </span>
       </div>
+
+      {/* Adaptive threshold banner */}
+      {showSuggestion && suggestion && (
+        <div className="flex items-center gap-3 px-4 py-2 bg-orange-950/40 border-b border-orange-900/50 shrink-0">
+          <span className="text-xs">💡</span>
+          <div className="flex-1 text-xs">
+            <span className="text-orange-300 font-medium">Suggested: {suggestion.suggested}</span>
+            <span className="text-gray-400">
+              {' — based on '}{suggestion.sampleCount}{' mod decision'}{suggestion.sampleCount === 1 ? '' : 's'}
+              {' · '}{suggestion.aboveRemoved} of {suggestion.aboveRemoved + suggestion.aboveApproved} above the line were removed
+            </span>
+          </div>
+          <button
+            onClick={applySuggestion}
+            className="text-xs bg-orange-600 hover:bg-orange-500 text-white px-3 py-1 rounded transition-colors font-medium"
+          >
+            Apply
+          </button>
+        </div>
+      )}
 
       {/* Feed */}
       <div className="flex-1 overflow-y-auto">
@@ -101,7 +136,17 @@ export default function AISentinel({ entries, threshold, send }: Props) {
                           Removed
                         </span>
                       )}
-                      <span className="text-xs text-gray-500">u/{entry.author}</span>
+                      {onDossier ? (
+                        <button
+                          onClick={() => onDossier(entry.author)}
+                          className="text-xs text-gray-500 hover:text-orange-400 transition-colors"
+                          title="Open user dossier"
+                        >
+                          u/{entry.author}
+                        </button>
+                      ) : (
+                        <span className="text-xs text-gray-500">u/{entry.author}</span>
+                      )}
                       <span className="text-xs text-gray-600">
                         {entry.type === 'comment' ? 'comment' : 'post'}
                       </span>
@@ -110,12 +155,24 @@ export default function AISentinel({ entries, threshold, send }: Props) {
                       </span>
                     </div>
                   </div>
-                  <button
-                    onClick={() => setExpanded(expanded === entry.id ? null : entry.id)}
-                    className="text-xs text-gray-500 hover:text-gray-300 shrink-0"
-                  >
-                    {expanded === entry.id ? '▲' : '▼'}
-                  </button>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {onCopilot && (
+                      <button
+                        onClick={() => onCopilot(entry.id)}
+                        title="Get AI recommendation from Mod Copilot"
+                        className="text-xs bg-orange-900/60 hover:bg-orange-800/60 border border-orange-500/40 text-orange-300 px-2.5 py-1 rounded-md transition-colors font-medium flex items-center gap-1"
+                      >
+                        <span className="text-sm">🤖</span>
+                        <span>Copilot</span>
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setExpanded(expanded === entry.id ? null : entry.id)}
+                      className="text-xs text-gray-500 hover:text-gray-300 px-1"
+                    >
+                      {expanded === entry.id ? '▲' : '▼'}
+                    </button>
+                  </div>
                 </div>
 
                 {expanded === entry.id && (

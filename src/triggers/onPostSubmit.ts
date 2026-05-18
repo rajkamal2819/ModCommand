@@ -21,6 +21,17 @@ export const onPostSubmit: PostSubmitDefinition = {
       createdAt: Date.now().toString(),
     })
 
+    // Reverse index per user for Copilot signal aggregation
+    const subNameForIdx = event.subreddit?.name ?? (await context.reddit.getCurrentSubreddit().catch(() => null))?.name
+    if (subNameForIdx && authorName !== 'unknown') {
+      try {
+        const userKey = Keys.userItems(subNameForIdx, authorName)
+        await redis.zAdd(userKey, { score: Date.now(), member: post.id })
+        const cnt = await redis.zCard(userKey)
+        if (cnt > 50) await redis.zRemRangeByRank(userKey, 0, cnt - 51)
+      } catch {}
+    }
+
     console.log(`[Sentinel] PostSubmit fired: ${post.id} by ${authorName}`)
     try {
       const apiKey = (await context.settings.get('geminiApiKey')) as string | undefined
@@ -79,6 +90,11 @@ export const onPostSubmit: PostSubmitDefinition = {
           // post.id may or may not include the t3_ prefix; normalize
           const fullId = post.id.startsWith('t3_') ? post.id : `t3_${post.id}`
           const fullPost = await context.reddit.getPostById(fullId)
+          // Flag this as an AI auto-report so onPostReport doesn't set reportedAt
+          // (which would wrongly arm Edit Watch evasion detection)
+          await redis.set(Keys.aiAutoReport(post.id), '1', {
+            expiration: new Date(Date.now() + 5 * 60 * 1000),
+          })
           // Reddit caps report reason at 100 chars
           const fullReason = `AI Sentinel: ${result.score}% — ${result.heuristics[0]}`
           await context.reddit.report(fullPost, {

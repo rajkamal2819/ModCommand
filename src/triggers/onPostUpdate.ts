@@ -87,20 +87,10 @@ export const onPostUpdate: PostUpdateDefinition = {
       await redis.zRemRangeByRank(feedKey, 0, cnt - 101)
     }
 
-    try {
-      if (record['author']) {
-        const noteId = (post.id.startsWith('t3_') ? post.id : `t3_${post.id}`) as `t3_${string}`
-        await context.reddit.addModNote({
-          subreddit: subredditName,
-          user: record['author'],
-          note: `Content edited ${deltaMinutes}m after report — evasion score: ${score}. Diff stored in ModCommand.`,
-          label: 'ABUSE_WARNING',
-          redditId: noteId,
-        })
-      }
-    } catch (noteErr) {
-      console.error('[EditWatch] Mod note failed:', noteErr instanceof Error ? noteErr.message : noteErr)
-    }
+    // Mod note intentionally not added — see Edit Watch tab in dashboard instead.
+    // Reddit mod notes are permanent and can't be undone, so any false-positive
+    // (e.g. from trigger replays) leaves a permanent ABUSE_WARNING on the user's
+    // profile. Dashboard surface is the source of truth.
 
     try {
       const apiKey = (await context.settings.get('geminiApiKey')) as string | undefined

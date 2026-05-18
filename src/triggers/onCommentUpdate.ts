@@ -56,19 +56,7 @@ export const onCommentUpdate: CommentUpdateDefinition = {
     await redis.zAdd(Keys.editFeed(subredditName), { score: now, member: feedEntry })
     await redis.zRemRangeByRank(Keys.editFeed(subredditName), 0, -101)
 
-    try {
-      if (record['author']) {
-        await context.reddit.addModNote({
-          subreddit: subredditName,
-          user: record['author'],
-          note: `Comment edited ${deltaMinutes}m after report — evasion score: ${score}. Diff stored in ModCommand.`,
-          label: 'ABUSE_WARNING',
-          redditId: `t1_${comment.id}`,
-        })
-      }
-    } catch {
-      // Mod notes are non-critical
-    }
+    // Mod note intentionally not added — see Edit Watch tab in dashboard instead.
 
     try {
       const apiKey = (await context.settings.get('geminiApiKey')) as string | undefined

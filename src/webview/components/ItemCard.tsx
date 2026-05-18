@@ -6,9 +6,11 @@ interface Props {
   onClaim: (id: string) => void
   onRelease: (id: string) => void
   onComboAction: (id: string) => void
+  onCopilot?: (id: string) => void
+  onDossier?: (username: string) => void
 }
 
-export default function ItemCard({ item, currentMod, onClaim, onRelease, onComboAction }: Props) {
+export default function ItemCard({ item, currentMod, onClaim, onRelease, onComboAction, onCopilot, onDossier }: Props) {
   const isClaimedByMe = item.claimedBy === currentMod
   const isClaimedByOther = item.claimedBy && item.claimedBy !== currentMod
   const ageMinutes = Math.floor((Date.now() - item.reportedAt) / 60000)
@@ -37,7 +39,17 @@ export default function ItemCard({ item, currentMod, onClaim, onRelease, onCombo
       </div>
 
       <div className="flex items-center gap-2 flex-wrap mb-3">
-        <span className="text-xs text-gray-400">u/{item.author}</span>
+        {onDossier ? (
+          <button
+            onClick={() => onDossier(item.author)}
+            className="text-xs text-gray-400 hover:text-orange-400 transition-colors"
+            title="Open user dossier"
+          >
+            u/{item.author}
+          </button>
+        ) : (
+          <span className="text-xs text-gray-400">u/{item.author}</span>
+        )}
         <span className="text-xs bg-gray-700 text-gray-300 px-1.5 py-0.5 rounded">
           {item.reportReason}
         </span>
@@ -52,27 +64,51 @@ export default function ItemCard({ item, currentMod, onClaim, onRelease, onCombo
       {isClaimedByOther ? (
         <div className="text-xs text-gray-500">🔒 Claimed by u/{item.claimedBy}</div>
       ) : isClaimedByMe ? (
-        <div className="flex gap-2">
-          <button
-            onClick={() => onComboAction(item.id)}
-            className="flex-1 text-xs bg-orange-600 hover:bg-orange-500 text-white py-1.5 rounded transition-colors font-medium"
-          >
-            Take Action
-          </button>
-          <button
-            onClick={() => onRelease(item.id)}
-            className="text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-3 py-1.5 rounded transition-colors"
-          >
-            Release
-          </button>
+        <div className="space-y-1.5">
+          {onCopilot && (
+            <button
+              onClick={() => onCopilot(item.id)}
+              title="Get AI recommendation from Mod Copilot"
+              className="w-full text-xs bg-orange-900/60 hover:bg-orange-800/60 border border-orange-500/40 text-orange-300 py-1.5 rounded-md transition-colors font-medium flex items-center justify-center gap-1.5"
+            >
+              <span className="text-sm">🤖</span>
+              <span>Ask Copilot</span>
+            </button>
+          )}
+          <div className="flex gap-2">
+            <button
+              onClick={() => onComboAction(item.id)}
+              className="flex-1 text-xs bg-orange-600 hover:bg-orange-500 text-white py-1.5 rounded transition-colors font-medium"
+            >
+              Take Action
+            </button>
+            <button
+              onClick={() => onRelease(item.id)}
+              className="text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-3 py-1.5 rounded transition-colors"
+            >
+              Release
+            </button>
+          </div>
         </div>
       ) : (
-        <button
-          onClick={() => onClaim(item.id)}
-          className="w-full text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 py-1.5 rounded transition-colors"
-        >
-          Claim
-        </button>
+        <div className="space-y-1.5">
+          {onCopilot && (
+            <button
+              onClick={() => onCopilot(item.id)}
+              title="Get AI recommendation from Mod Copilot"
+              className="w-full text-xs bg-orange-900/60 hover:bg-orange-800/60 border border-orange-500/40 text-orange-300 py-1.5 rounded-md transition-colors font-medium flex items-center justify-center gap-1.5"
+            >
+              <span className="text-sm">🤖</span>
+              <span>Ask Copilot</span>
+            </button>
+          )}
+          <button
+            onClick={() => onClaim(item.id)}
+            className="w-full text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 py-1.5 rounded transition-colors"
+          >
+            Claim
+          </button>
+        </div>
       )}
     </div>
   )

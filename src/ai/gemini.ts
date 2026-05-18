@@ -20,11 +20,56 @@ export interface EditResult {
   reason: string
 }
 
+export interface CopilotResult {
+  action: 'approve' | 'remove' | 'ban' | 'escalate'
+  confidence: 'high' | 'medium' | 'low'
+  reason: string
+  draftMessage: string
+  banReason?: string
+  banDuration?: number
+}
+
+export interface DossierSummaryResult {
+  summary: string
+  riskTag: 'low' | 'medium' | 'high'
+}
+
+export interface DossierSummarySignals {
+  username: string
+  accountAgeDays: number | null
+  karma: number | null
+  recentItemCount: number
+  removedCount: number
+  evasionCount: number
+  appealStatus: string | null
+  recentTitles: string[] // first ~5 titles to give Gemini flavor
+}
+
+export interface CopilotSignals {
+  subName: string
+  title: string
+  body: string
+  author: string
+  accountAgeDays: number
+  authorKarma: number | null
+  aigcScore: number | null
+  aigcHeuristics: string[]
+  reportCount: number
+  reportReasons: string[]
+  removalCount30d: number
+  totalItems30d: number
+  evasionCount: number
+  prevAppealStatus: string | null
+  itemAgeHours: number
+}
+
 // ─── Core Gemini fetch (with retry) ───────────────────────────────────────────
 
-async function callGemini<T>(prompt: string, apiKey: string, retries = 2): Promise<T> {
+async function callGemini<T>(prompt: string, apiKey: string, retries = 1): Promise<T> {
   let lastError: Error | undefined
   for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 10000)
     try {
       console.log(`[Gemini] Attempt ${attempt + 1}/${retries + 1}`)
       const res = await fetch(
@@ -40,8 +85,10 @@ async function callGemini<T>(prompt: string, apiKey: string, retries = 2): Promi
             messages: [{ role: 'user', content: prompt }],
             response_format: { type: 'json_object' },
           }),
+          signal: controller.signal,
         }
       )
+      clearTimeout(timeout)
       if (!res.ok) {
         const errBody = await res.text()
         console.error(`[Gemini] HTTP ${res.status}: ${errBody.slice(0, 500)}`)
@@ -55,6 +102,7 @@ async function callGemini<T>(prompt: string, apiKey: string, retries = 2): Promi
       const cleaned = rawContent.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim()
       return JSON.parse(cleaned) as T
     } catch (err) {
+      clearTimeout(timeout)
       lastError = err instanceof Error ? err : new Error(String(err))
       console.error(`[Gemini] Attempt ${attempt + 1} failed: ${lastError.message}`)
       if (attempt < retries) await sleep(500 * 2 ** attempt)
@@ -196,6 +244,259 @@ export async function classifyEdit(
     EDIT_PROMPT(original, edited, deltaMinutes),
     apiKey
   )
+  await redis.set(cacheKey, JSON.stringify(result), ttl(86400))
+  return result
+}
+
+// ─── Prompt 4 — Mod Copilot ──────────────────────────────────────────────────
+
+const COPILOT_PROMPT = (s: CopilotSignals) => `
+You are an expert Reddit moderation assistant for the subreddit "${s.subName}".
+Given the post and the signals below, recommend ONE action and explain in one short sentence.
+
+Action choices:
+- "approve"   — content is acceptable; clear the report and unflag.
+- "remove"    — content violates norms; remove without ban.
+- "ban"       — repeat or severe offender; remove and ban the author.
+- "escalate"  — signals contradict (e.g. high AI score but clean history); needs human judgment.
+
+Confidence: "high" only when signals strongly converge; "medium" when most agree; "low" when sparse or conflicting.
+
+draftMessage: 1-3 sentences the mod could post as the public removal reason or modmail message. Empathetic, specific, cite the rule pattern (not a rule number, you don't know them). For "approve" return empty string.
+
+If action is "ban": include banReason (mod-facing, short) and banDuration in DAYS (7 default; 30 for repeat; omit for permanent if egregious).
+
+Return ONLY a JSON object, no markdown, no prose:
+{
+  "action": "approve|remove|ban|escalate",
+  "confidence": "high|medium|low",
+  "reason": "<one sentence citing the strongest 2-3 signals>",
+  "draftMessage": "<empty for approve, else 1-3 sentences>",
+  "banReason": "<only if action=ban>",
+  "banDuration": <only if action=ban, integer days or omit for permanent>
+}
+
+POST
+title: ${s.title}
+body: ${s.body.slice(0, 1500)}
+author: u/${s.author} (account age ${s.accountAgeDays}d, sub karma ${s.authorKarma ?? 'unknown'})
+posted: ${s.itemAgeHours}h ago
+
+SIGNALS
+- AIGC score: ${s.aigcScore ?? 'not scored'}/100${s.aigcHeuristics.length ? ' (' + s.aigcHeuristics.join('; ') + ')' : ''}
+- Reports: ${s.reportCount}${s.reportReasons.length ? ' (' + s.reportReasons.join('; ') + ')' : ''}
+- Author's removal rate here (30d): ${s.totalItems30d > 0 ? Math.round((s.removalCount30d / s.totalItems30d) * 100) : 0}% (${s.removalCount30d}/${s.totalItems30d})
+- Edit Watch evasion history: ${s.evasionCount > 0 ? s.evasionCount + ' prior evasion edits' : 'none'}
+- Prior appeal: ${s.prevAppealStatus ?? 'none'}
+`
+
+export async function copilotRecommend(
+  signals: CopilotSignals,
+  redis: RedisClient,
+  apiKey: string
+): Promise<CopilotResult> {
+  // Hash on the dynamic signals only (not subName/title prefix) so identical situations share cache
+  const hash = hashContent(
+    `${signals.author}|${signals.aigcScore}|${signals.reportCount}|${signals.removalCount30d}|${signals.evasionCount}|${signals.body.slice(0, 500)}`
+  )
+  const cacheKey = Keys.aiScore('copilot:' + hash)
+
+  const cached = await redis.get(cacheKey)
+  if (cached) return JSON.parse(cached) as CopilotResult
+
+  const result = await callGemini<CopilotResult>(COPILOT_PROMPT(signals), apiKey)
+  // Validate
+  if (!['approve', 'remove', 'ban', 'escalate'].includes(result.action)) {
+    result.action = 'escalate'
+    result.confidence = 'low'
+  }
+  if (!['high', 'medium', 'low'].includes(result.confidence)) {
+    result.confidence = 'low'
+  }
+  await redis.set(cacheKey, JSON.stringify(result), ttl(86400))
+  return result
+}
+
+// ─── Prompt 5 — Dossier behavioral summary ─────────────────────────────────
+
+const DOSSIER_SUMMARY_PROMPT = (s: DossierSummarySignals) => `
+You are an expert Reddit moderation assistant. Given the user's footprint in this subreddit, write a SHORT behavioral summary (≤25 words) and assign a risk tag.
+
+Risk tag:
+- "low"     — clean recent history, no patterns of concern
+- "medium"  — mixed signals, some flags worth watching
+- "high"    — clear pattern of rule-skirting behavior (evasion edits, high removal rate, etc.)
+
+Tone: neutral, factual, concrete. Mention the strongest 1-2 signals. NOT a value judgment.
+
+Return ONLY a JSON object:
+{
+  "summary": "<one sentence ≤25 words>",
+  "riskTag": "low|medium|high"
+}
+
+USER FOOTPRINT
+- username: u/${s.username}
+- account age: ${s.accountAgeDays ?? 'unknown'} days
+- karma: ${s.karma ?? 'unknown'}
+- tracked items in this sub: ${s.recentItemCount}
+- mod removals against this user: ${s.removedCount}
+- edit-evasion incidents flagged: ${s.evasionCount}
+- prior appeal: ${s.appealStatus ?? 'none'}
+- recent titles: ${s.recentTitles.slice(0, 5).map((t) => `"${t.slice(0, 80)}"`).join('; ') || 'n/a'}
+`
+
+// ─── Prompt 6 — Copilot Chat (multi-turn) ─────────────────────────────────
+
+export interface CopilotChatTurn {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface CopilotChatReply {
+  content: string
+  suggestions: string[] // up to 3 follow-up questions the mod can click
+  kind?: 'draft' | 'answer'
+}
+
+// Detects mod slash-commands and rewrites them into a directive instruction
+// the model executes within the same item context. Keeps history clean.
+export function rewriteSlashCommand(userInput: string): { rewritten: string; isDraft: boolean } {
+  const trimmed = userInput.trim()
+  const lower = trimmed.toLowerCase()
+  if (lower.startsWith('/removal-reason') || lower.startsWith('/removal')) {
+    const extra = trimmed.replace(/^\/removal[a-z-]*\s*/i, '').trim()
+    return {
+      rewritten: `Draft a public removal-reason comment for this item, written in the subreddit's voice. Empathetic, specific, name the rule pattern (not a rule number). 1-3 sentences.${extra ? ' Extra context from the mod: ' + extra : ''}`,
+      isDraft: true,
+    }
+  }
+  if (lower.startsWith('/modmail')) {
+    const extra = trimmed.replace(/^\/modmail\s*/i, '').trim()
+    return {
+      rewritten: `Draft a modmail reply to the user about this item. Tone: professional, neutral, brief (2-4 sentences). Address their likely concern.${extra ? ' Extra context: ' + extra : ''}`,
+      isDraft: true,
+    }
+  }
+  if (lower.startsWith('/sticky')) {
+    const extra = trimmed.replace(/^\/sticky\s*/i, '').trim()
+    return {
+      rewritten: `Draft a sticky-comment mods can pin under this post to explain a controversial decision. Tone: calm, transparent, 2-4 sentences.${extra ? ' Extra context: ' + extra : ''}`,
+      isDraft: true,
+    }
+  }
+  if (lower.startsWith('/rule-cite') || lower.startsWith('/rule')) {
+    const extra = trimmed.replace(/^\/rule[a-z-]*\s*/i, '').trim()
+    return {
+      rewritten: `Explain which sub rule pattern this item most likely violates (or doesn't). Cite the pattern in plain language, not a number. 1-2 sentences.${extra ? ' Extra context: ' + extra : ''}`,
+      isDraft: false,
+    }
+  }
+  return { rewritten: trimmed, isDraft: false }
+}
+
+const COPILOT_CHAT_SYSTEM = (s: CopilotSignals) => `You are Mod Copilot, an AI assistant helping a Reddit moderator of "${s.subName}" investigate one specific item. You have already given a verdict on this item; the mod is now asking follow-up questions.
+
+ITEM CONTEXT
+- title: ${s.title}
+- body: ${s.body.slice(0, 1500)}
+- author: u/${s.author} (account age ${s.accountAgeDays}d, sub karma ${s.authorKarma ?? 'unknown'})
+- posted: ${s.itemAgeHours}h ago
+- AIGC score: ${s.aigcScore ?? 'not scored'}/100${s.aigcHeuristics.length ? ' (' + s.aigcHeuristics.join('; ') + ')' : ''}
+- Reports: ${s.reportCount}${s.reportReasons.length ? ' (' + s.reportReasons.join('; ') + ')' : ''}
+- Author's removal rate here (30d): ${s.totalItems30d > 0 ? Math.round((s.removalCount30d / s.totalItems30d) * 100) : 0}% (${s.removalCount30d}/${s.totalItems30d})
+- Edit Watch evasion history: ${s.evasionCount > 0 ? s.evasionCount + ' prior evasion edits' : 'none'}
+- Prior appeal: ${s.prevAppealStatus ?? 'none'}
+
+RULES
+- Be CONCISE. Most answers are 1-3 sentences. Draft messages may be longer if requested.
+- Ground every claim in the item context or the signals above. Don't invent facts.
+- If asked to draft something, write it as if the mod would paste it directly — no preamble like "Here's a draft:".
+- Always end your JSON with 2-3 short follow-up suggestions the mod might want to ask next, tailored to where the conversation is going.
+
+Return ONLY a JSON object, no markdown, no prose outside JSON:
+{
+  "content": "<your reply, 1-5 sentences unless drafting>",
+  "suggestions": ["<question 1>", "<question 2>", "<question 3>"]
+}
+`
+
+export async function copilotChat(
+  signals: CopilotSignals,
+  history: CopilotChatTurn[],
+  userMessage: string,
+  apiKey: string
+): Promise<CopilotChatReply> {
+  // Build conversation messages array for Gemini chat completions.
+  const messages: Array<{ role: string; content: string }> = [
+    { role: 'system', content: COPILOT_CHAT_SYSTEM(signals) },
+    ...history.map((h) => ({ role: h.role, content: h.content })),
+    { role: 'user', content: userMessage },
+  ]
+
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 15000)
+  try {
+    console.log(`[Gemini] copilotChat turn=${history.length + 1}`)
+    const res = await fetch(
+      'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: 'gemini-2.5-flash',
+          messages,
+          response_format: { type: 'json_object' },
+        }),
+        signal: controller.signal,
+      }
+    )
+    clearTimeout(timeout)
+    if (!res.ok) {
+      const errBody = await res.text()
+      throw new Error(`Gemini HTTP ${res.status}: ${errBody.slice(0, 200)}`)
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data = (await res.json()) as any
+    const rawContent = data?.choices?.[0]?.message?.content ?? ''
+    const cleaned = rawContent.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim()
+    const parsed = JSON.parse(cleaned) as CopilotChatReply
+    if (typeof parsed.content !== 'string' || parsed.content.length === 0) {
+      throw new Error('Chat reply had empty content')
+    }
+    if (!Array.isArray(parsed.suggestions)) parsed.suggestions = []
+    parsed.suggestions = parsed.suggestions.filter((s) => typeof s === 'string' && s.length > 0).slice(0, 3)
+    return parsed
+  } catch (err) {
+    clearTimeout(timeout)
+    throw err
+  }
+}
+
+export async function dossierSummary(
+  signals: DossierSummarySignals,
+  redis: RedisClient,
+  apiKey: string
+): Promise<DossierSummaryResult> {
+  const hash = hashContent(
+    `${signals.username}|${signals.accountAgeDays}|${signals.recentItemCount}|${signals.removedCount}|${signals.evasionCount}|${signals.appealStatus}`
+  )
+  const cacheKey = Keys.aiScore('dossier:' + hash)
+
+  const cached = await redis.get(cacheKey)
+  if (cached) return JSON.parse(cached) as DossierSummaryResult
+
+  const result = await callGemini<DossierSummaryResult>(DOSSIER_SUMMARY_PROMPT(signals), apiKey)
+  if (!['low', 'medium', 'high'].includes(result.riskTag)) {
+    result.riskTag = 'low'
+  }
+  if (typeof result.summary !== 'string' || result.summary.length === 0) {
+    result.summary = 'No notable behavioral signals.'
+    result.riskTag = 'low'
+  }
   await redis.set(cacheKey, JSON.stringify(result), ttl(86400))
   return result
 }

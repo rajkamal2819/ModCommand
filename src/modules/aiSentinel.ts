@@ -1,10 +1,13 @@
 import type { Context } from '@devvit/public-api'
-import type { SentinelEntry } from '../shared/messages.js'
+import type { SentinelEntry, ThresholdSuggestion } from '../shared/messages.js'
 import { Keys } from '../redis/keys.js'
+import { computeSuggestion } from './adaptiveThreshold.js'
+import { recordAudit } from './audit.js'
 
 export async function handleSentinelLoad(context: Context): Promise<{
   entries: SentinelEntry[]
   threshold: number
+  suggestion: ThresholdSuggestion | null
 }> {
   const redis = context.redis
   const subreddit = await context.reddit.getCurrentSubreddit()
@@ -23,9 +26,10 @@ export async function handleSentinelLoad(context: Context): Promise<{
   // Fetch all entries by index (Devvit Redis doesn't accept +inf/-inf strings reliably)
   const feedKey = Keys.sentinelFeed(subreddit.name)
   const removedKey = Keys.sentinelRemoved(subreddit.name)
-  const [rawEntries, removedIds] = await Promise.all([
+  const [rawEntries, removedIds, suggestion] = await Promise.all([
     redis.zRange(feedKey, 0, -1),
     redis.hGetAll(removedKey),
+    computeSuggestion(subreddit.name, context),
   ])
   const removedMap = removedIds ?? {}
 
@@ -46,7 +50,7 @@ export async function handleSentinelLoad(context: Context): Promise<{
     })
     .sort((a, b) => b.score - a.score)
 
-  return { entries, threshold }
+  return { entries, threshold, suggestion }
 }
 
 export async function handleSentinelThresholdUpdate(
@@ -60,5 +64,12 @@ export async function handleSentinelThresholdUpdate(
     Keys.settings(subreddit.id),
     JSON.stringify({ aigcThreshold: threshold }),
     { expiration: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) }
+  )
+  // Audit the threshold change so it shows up in the per-sub history
+  const modName = (await context.reddit.getCurrentUsername()) ?? 'unknown'
+  await recordAudit(
+    subreddit.name,
+    { action: 'threshold_change', mod: modName, extra: { newThreshold: threshold } },
+    context
   )
 }

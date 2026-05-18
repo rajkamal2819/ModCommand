@@ -18,9 +18,18 @@ export interface ModQueueItem {
   aigcScore: number | null
   editEvasionScore: 'HIGH' | 'MEDIUM' | 'LOW' | null
   status: 'unclaimed' | 'in_review' | 'action_pending' | 'done'
+  // Action Pending metadata — set when status === 'action_pending'
+  pendingAction?: ComboAction
+  pendingInitiator?: string
+  pendingAt?: number
+  // Done metadata — set when status === 'done'
+  doneAction?: ComboAction
+  doneBy?: string
+  doneAt?: number
 }
 
 export interface ComboAction {
+  approve?: boolean // when true: clear reports, keep post; mutually exclusive with remove/ban
   remove: boolean
   ban: boolean
   banReason: string
@@ -84,6 +93,85 @@ export interface DiffChunk {
   value: string
 }
 
+// ─── User Dossier ───────────────────────────────────────────────────────────
+
+export interface DossierItem {
+  id: string
+  title: string
+  type: 'post' | 'comment'
+  aigcScore: number | null
+  removedBy: 'mod' | 'user' | null
+  scoredAt: number
+  evasionScore?: 'HIGH' | 'MEDIUM' | 'LOW' | null
+}
+
+export interface DossierAuditEntry {
+  ts: number
+  action: string // 'remove' | 'approve' | 'ban' | 'unban' | 'temp_ban' | 'edit_remove' | 'edit_innocent' | 'edit_ignore' | 'threshold_change'
+  mod: string
+  itemId?: string
+  reason?: string
+}
+
+export interface DossierState {
+  username: string
+  accountAgeDays: number | null
+  karma: number | null
+  isModerator: boolean
+  isDeleted: boolean
+  installedAt: number | null
+  recentItems: DossierItem[]
+  evasionCount: number
+  appealStatus: 'pending' | 'accepted' | 'denied' | null
+  appealAt: number | null
+  auditOnUser: DossierAuditEntry[] // mod actions taken against this user (last 30d)
+  pinned: boolean
+}
+
+export interface DossierSummary {
+  summary: string
+  riskTag: 'low' | 'medium' | 'high'
+  generatedAt: number
+}
+
+// ─── Adaptive Threshold ─────────────────────────────────────────────────────
+
+export interface ThresholdSuggestion {
+  suggested: number
+  sampleCount: number
+  belowApproved: number   // count of approves under the suggested threshold
+  belowRemoved: number
+  aboveApproved: number
+  aboveRemoved: number
+}
+
+export interface CopilotRecommendation {
+  action: 'approve' | 'remove' | 'ban' | 'escalate'
+  confidence: 'high' | 'medium' | 'low'
+  reason: string
+  draftMessage: string
+  banReason?: string
+  banDuration?: number
+  signalsUsed: string[]
+  generatedAt: number
+  applied?: boolean
+}
+
+// Multi-turn Copilot chat: stored per-item, 24h TTL.
+// First entry is the verdict; subsequent entries are follow-ups (questions, drafts, etc).
+export interface CopilotChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+  ts: number
+  // Optional shape hints for the UI:
+  // - 'verdict' = first assistant turn carrying the action recommendation
+  // - 'draft'   = a draft message (removal reason, modmail, sticky comment) the mod can copy
+  // - 'answer'  = generic conversational follow-up
+  kind?: 'verdict' | 'draft' | 'answer'
+  // Suggested next questions the mod can click to send (proactive prompts)
+  suggestions?: string[]
+}
+
 export interface ModStats {
   username: string
   lastActive: number
@@ -113,6 +201,14 @@ export type ClientMessage =
   | { type: 'EDITWATCH_LOAD' }
   | { type: 'EDITWATCH_ACTION'; itemId: string; action: 'restore_remove' | 'innocent' | 'ignore' }
   | { type: 'WORKLOAD_LOAD'; period: '7d' | '30d' }
+  | { type: 'COPILOT_RECOMMEND'; itemId: string; force?: boolean }
+  | { type: 'COPILOT_APPLY'; itemId: string }
+  | { type: 'COPILOT_CHAT_LOAD'; itemId: string }
+  | { type: 'COPILOT_CHAT_SEND'; itemId: string; content: string }
+  | { type: 'PENDING_CONFIRM'; itemId: string }
+  | { type: 'PENDING_REJECT'; itemId: string }
+  | { type: 'DOSSIER_LOAD'; username: string }
+  | { type: 'DOSSIER_PIN_TOGGLE'; username: string }
 
 // ─── Server → Client messages ─────────────────────────────────────────────────
 
@@ -120,9 +216,13 @@ export type ServerMessage =
   | { type: 'TRIAGE_STATE'; items: ModQueueItem[]; currentMod: string }
   | { type: 'CLAIM_UPDATE'; itemId: string; claimedBy: string | null }
   | { type: 'APPEAL_STATE'; appeals: Appeal[] }
-  | { type: 'SENTINEL_STATE'; entries: SentinelEntry[]; threshold: number }
+  | { type: 'SENTINEL_STATE'; entries: SentinelEntry[]; threshold: number; suggestion?: ThresholdSuggestion | null }
   | { type: 'EDITWATCH_STATE'; entries: EditWatchEntry[] }
   | { type: 'WORKLOAD_STATE'; mods: ModStats[]; period: '7d' | '30d' }
   | { type: 'ACTION_SUCCESS'; message: string }
   | { type: 'ERROR'; message: string }
   | { type: 'ACCESS_DENIED' }
+  | { type: 'COPILOT_STATE'; itemId: string; recommendation: CopilotRecommendation }
+  | { type: 'COPILOT_CHAT_STATE'; itemId: string; messages: CopilotChatMessage[]; thinking?: boolean }
+  | { type: 'DOSSIER_STATE'; username: string; data: DossierState }
+  | { type: 'DOSSIER_SUMMARY'; username: string; summary: DossierSummary }

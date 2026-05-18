@@ -1,25 +1,38 @@
 import type { Context } from '@devvit/public-api'
 import { Keys } from '../redis/keys.js'
 
-const TTL_SECONDS = 60
+const LIST_TTL_SECONDS = 300 // 5 min — full mod list cache (shared)
+
+// Returns the set of moderator usernames for the given sub, cached for 5 min.
+// Used by both isCurrentUserModerator and Copilot's author-is-mod guard.
+export async function getModeratorSet(subName: string, context: Context): Promise<Set<string>> {
+  const cacheKey = Keys.modList(subName)
+  const cached = await context.redis.get(cacheKey)
+  if (cached) {
+    try {
+      return new Set(JSON.parse(cached) as string[])
+    } catch {
+      // fall through and refetch
+    }
+  }
+  const mods = await context.reddit.getModerators({ subredditName: subName }).all()
+  const usernames = mods.map((m) => m.username)
+  await context.redis.set(cacheKey, JSON.stringify(usernames), {
+    expiration: new Date(Date.now() + LIST_TTL_SECONDS * 1000),
+  })
+  return new Set(usernames)
+}
 
 export async function isCurrentUserModerator(context: Context): Promise<boolean> {
   try {
-    const username = await context.reddit.getCurrentUsername()
+    const [username, subreddit] = await Promise.all([
+      context.reddit.getCurrentUsername(),
+      context.reddit.getCurrentSubreddit(),
+    ])
     if (!username) return false
 
-    const subreddit = await context.reddit.getCurrentSubreddit()
-    const cacheKey = Keys.modCheck(subreddit.name, username)
-
-    const cached = await context.redis.get(cacheKey)
-    if (cached === '1') return true
-    if (cached === '0') return false
-
-    const mods = await context.reddit.getModerators({ subredditName: subreddit.name }).all()
-    const isMod = mods.some((m) => m.username === username)
-
-    await context.redis.set(cacheKey, isMod ? '1' : '0', { expiration: new Date(Date.now() + TTL_SECONDS * 1000) })
-    return isMod
+    const modSet = await getModeratorSet(subreddit.name, context)
+    return modSet.has(username)
   } catch {
     return false
   }

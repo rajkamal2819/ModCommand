@@ -6,5 +6,6 @@ context.md
 prd.md
 GUIDE.md
 enhancements.md
+features.md
 *.tsbuildinfo
 .devvit/
