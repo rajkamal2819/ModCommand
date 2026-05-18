@@ -385,19 +385,19 @@ Devvit.addCustomPostType({
               const recommendation = await handleCopilotRecommend(message.itemId, context, { force: message.force })
               console.log(`[onMessage] COPILOT response ready, sending; total=${Date.now() - tMsg}ms`)
               send({ type: 'COPILOT_STATE', itemId: message.itemId, recommendation })
-              // Seed chat with the verdict so the multi-turn panel has something
-              // to show. Run inline (not as a detached IIFE) — Devvit's eval
-              // context only stays valid during the synchronous run of this
-              // handler, and a fire-and-forget closure can fail with
-              // "setTimeout is not defined" when it tries to deferred-execute
-              // after the handler returns. Inline keeps `context` in scope.
-              try {
-                await seedChatWithVerdict(message.itemId, recommendation, context)
-                const messages = await handleCopilotChatLoad(message.itemId, context)
-                send({ type: 'COPILOT_CHAT_STATE', itemId: message.itemId, messages })
-              } catch (err) {
-                console.error('[onMessage] seedChatWithVerdict failed:', err instanceof Error ? err.message : err)
-              }
+              // Fire-and-forget: seed chat with the verdict AFTER returning so
+              // the verdict response paints immediately. Inlining this turned
+              // out to hold the Devvit postMessage bridge open long enough that
+              // COPILOT_STATE was being dropped in some flows.
+              ;(async () => {
+                try {
+                  await seedChatWithVerdict(message.itemId, recommendation, context)
+                  const messages = await handleCopilotChatLoad(message.itemId, context)
+                  send({ type: 'COPILOT_CHAT_STATE', itemId: message.itemId, messages })
+                } catch (err) {
+                  console.error('[onMessage] seedChatWithVerdict failed:', err instanceof Error ? err.message : err)
+                }
+              })()
               break
             }
             case 'COPILOT_APPLY': {
@@ -429,19 +429,18 @@ Devvit.addCustomPostType({
               console.log(`[onMessage] dispatching DOSSIER_LOAD for ${message.username}`)
               const data = await handleDossierLoad(message.username, context)
               send({ type: 'DOSSIER_STATE', username: message.username, data })
-              // AI summary runs inline so Devvit's eval-context stays valid.
-              // Fire-and-forget would let `context` go out of scope and trigger
-              // `'setTimeout' is not defined` (or similar) from any internal
-              // timer use in fetch/abort. Slight UX cost: data + summary land
-              // together rather than data-first, but only when AI is enabled.
-              try {
-                const summary = await handleDossierSummary(message.username, data, context)
-                if (summary) {
-                  send({ type: 'DOSSIER_SUMMARY', username: message.username, summary })
+              // Fire-and-forget AI summary so the panel paints data first.
+              // Don't await — the summary message is delivered when ready.
+              ;(async () => {
+                try {
+                  const summary = await handleDossierSummary(message.username, data, context)
+                  if (summary) {
+                    send({ type: 'DOSSIER_SUMMARY', username: message.username, summary })
+                  }
+                } catch (err) {
+                  console.error('[onMessage] dossier summary failed:', err instanceof Error ? err.message : err)
                 }
-              } catch (err) {
-                console.error('[onMessage] dossier summary failed:', err instanceof Error ? err.message : err)
-              }
+              })()
               break
             }
             case 'DOSSIER_PIN_TOGGLE': {
