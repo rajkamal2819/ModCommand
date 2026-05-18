@@ -22,7 +22,7 @@ Live feed of posts and comments that score above your configurable AIGC threshol
 ### 4. Edit Watch
 Catches users who edit their content after it's been reported. Computes a side-by-side diff and assigns a suspicion score (HIGH / MEDIUM / LOW) based on how quickly the edit happened after the report and how substantive the change is. Actions: restore + remove, mark innocent, or ignore.
 
-### 5. Workload Wall (v2 — integrated)
+### 5. Workload Wall
 Per-moderator dashboard with:
 - **Live Queue card** at the top — Unclaimed / In Review / Pending Approval / Done last hour, with border color shifting by queue pressure
 - **Stacked bar chart** of actions per moderator
